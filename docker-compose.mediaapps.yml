@@ -1,0 +1,33 @@
+# Alternative docker-compose configuration for integration with existing media stack
+# This is designed to be merged into your existing /opt/media/docker-compose.yml
+
+version: '3.8'
+
+services:
+  spotify-slskd-search:
+    build: /path/to/spotify-slskd-search
+    container_name: spotify-slskd-search
+    restart: unless-stopped
+    ports:
+      - "5070:5000"
+    environment:
+      - SLSKD_URL=http://192.168.1.124:5030
+      - SLSKD_API_KEY=${SLSKD_API_KEY}
+      - SLSKD_URL_BASE=/
+      - SEARCH_TIMEOUT=15
+      - SEARCH_DELAY=3
+      - DATA_DIR=/app/data
+      - FLASK_ENV=production
+    volumes:
+      - /opt/media/spotify-slskd-data:/app/data
+    networks:
+      - media_net
+    labels:
+      - "com.spotify-slskd-search.description=Spotify to Slskd Search Aggregator"
+      - "com.spotify-slskd-search.version=1.0.0"
+
+# Note: This assumes you already have a media_net network defined in your main docker-compose.yml
+# If not, add it like this:
+# networks:
+#   media_net:
+#     driver: bridge

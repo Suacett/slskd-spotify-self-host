@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Data (handled by volume mounts)
+data/
+*.csv
+*.json
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Documentation
+README.md
+LICENSE
+*.md
+
+# Docker
+docker-compose*.yml
+Dockerfile
+.dockerignore
