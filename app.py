@@ -744,6 +744,50 @@ class WatchListManager:
         pass
 
 
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    """Handle CSV file upload"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    if file:
+        try:
+            # Save file
+            filename = secure_filename(file.filename)
+            filepath = app.config['UPLOAD_FOLDER'] / filename
+            file.save(filepath)
+            
+            # Parse CSV
+            artists = parse_spotify_csv(filepath)
+            
+            # Calculate stats
+            total_artists = len(artists)
+            existing_artists = 0
+            
+            for artist in artists:
+                # Check if we already have results for this artist
+                key = f"{artist['artist']} - {artist['title']}" if artist.get('title') else artist['artist']
+                if search_manager.get_track_results(key):
+                    existing_artists += 1
+                    
+            new_artists = total_artists - existing_artists
+            
+            return jsonify({
+                'success': True,
+                'artists': artists,
+                'total_artists': total_artists,
+                'new_artists': new_artists,
+                'existing_artists': existing_artists
+            })
+            
+        except Exception as e:
+            logger.error(f"Upload error: {e}")
+            return jsonify({'error': str(e)}), 500
+
 class Romanizer:
     """Handles Japanese to Romaji conversion"""
     def __init__(self):
