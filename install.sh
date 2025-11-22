@@ -23,14 +23,21 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-# Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+# Detect Docker Compose command (V1 vs V2)
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+    echo -e "${GREEN}✓${NC} Found Docker Compose V1"
+elif docker compose version &> /dev/null 2>&1; then
+    DOCKER_COMPOSE="docker compose"
+    echo -e "${GREEN}✓${NC} Found Docker Compose V2"
+else
     echo -e "${RED}Error: Docker Compose is not installed${NC}"
     echo "Please install Docker Compose first"
+    echo "  For V2 (recommended): Already included in Docker Desktop"
+    echo "  For V1 (legacy): https://docs.docker.com/compose/install/"
     exit 1
 fi
 
-echo -e "${GREEN}✓${NC} Docker and Docker Compose are installed"
 echo ""
 
 # Check if .env file exists
@@ -82,11 +89,11 @@ read -p "Would you like to build and start the application now? (y/n): " -r
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo ""
     echo -e "${YELLOW}Building Docker image...${NC}"
-    docker-compose build
+    $DOCKER_COMPOSE build
 
     echo ""
     echo -e "${YELLOW}Starting application...${NC}"
-    docker-compose up -d
+    $DOCKER_COMPOSE up -d
 
     echo ""
     echo -e "${GREEN}========================================${NC}"
@@ -100,10 +107,10 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "  http://$(hostname -I | awk '{print $1}'):5070"
     echo ""
     echo -e "${BLUE}Useful commands:${NC}"
-    echo "  docker-compose logs -f     # View logs"
-    echo "  docker-compose stop        # Stop the application"
-    echo "  docker-compose restart     # Restart the application"
-    echo "  docker-compose down        # Stop and remove containers"
+    echo "  $DOCKER_COMPOSE logs -f     # View logs"
+    echo "  $DOCKER_COMPOSE stop        # Stop the application"
+    echo "  $DOCKER_COMPOSE restart     # Restart the application"
+    echo "  $DOCKER_COMPOSE down        # Stop and remove containers"
     echo ""
     echo -e "${BLUE}Next steps:${NC}"
     echo "  1. Open the web interface in your browser"
@@ -117,7 +124,7 @@ else
     echo ""
     echo -e "${BLUE}When you're ready to start:${NC}"
     echo "  1. Edit .env and add your API key (if not done already)"
-    echo "  2. Run: docker-compose up -d"
+    echo "  2. Run: $DOCKER_COMPOSE up -d"
     echo ""
 fi
 
