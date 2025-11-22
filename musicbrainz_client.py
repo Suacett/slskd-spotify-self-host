@@ -1,113 +1,44 @@
-"""
-MusicBrainz API Client
-Fetches canonical metadata for tracks including ISRC, duration, album, and artist information.
-"""
+# musicbrainz_client.py
 
-import time
 import logging
+import time
 import requests
-from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from typing import Optional, Dict
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
-
 class MusicBrainzClient:
-    """
-    Client for querying the MusicBrainz API.
-
-    Implements rate limiting (1 request per second as per MusicBrainz guidelines)
-    and provides methods to fetch canonical track metadata.
-    """
+    """Client for interacting with the MusicBrainz API."""
 
     BASE_URL = "https://musicbrainz.org/ws/2"
-    RATE_LIMIT_DELAY = 1.0  # 1 second between requests per MusicBrainz guidelines
-    REQUEST_TIMEOUT = 10  # 10 seconds timeout for requests
-    MAX_RETRIES = 3
+    USER_AGENT = "slskd-spotify-self-host/1.0 (https://github.com/yourusername/slskd-spotify-self-host)"
 
-    def __init__(self, user_agent: str = "slskd-spotify-self-host/1.0"):
-        """
-        Initialize the MusicBrainz client.
+    def __init__(self, user_agent: str = None):
+        if user_agent:
+            self.USER_AGENT = user_agent
 
-        Args:
-            user_agent: User agent string for API requests (required by MusicBrainz)
-        """
-        self.user_agent = user_agent
-        self.last_request_time = 0
-        self.headers = {
-            'User-Agent': user_agent,
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': self.USER_AGENT,
             'Accept': 'application/json'
-        }
+        })
+        self.last_request_time = 0
+        # MusicBrainz allows 1 request per second
+        self.rate_limit_delay = 1.1
 
     def _rate_limit(self):
-        """Ensure we don't exceed MusicBrainz rate limits (1 req/sec)."""
+        """Ensure we adhere to the MusicBrainz API rate limit."""
         current_time = time.time()
         time_since_last_request = current_time - self.last_request_time
-
-        if time_since_last_request < self.RATE_LIMIT_DELAY:
-            sleep_time = self.RATE_LIMIT_DELAY - time_since_last_request
-            logger.debug(f"Rate limiting: sleeping for {sleep_time:.2f}s")
+        if time_since_last_request < self.rate_limit_delay:
+            sleep_time = self.rate_limit_delay - time_since_last_request
             time.sleep(sleep_time)
-
         self.last_request_time = time.time()
 
-    def _make_request(self, endpoint: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def search_recording(self, artist: str, title: str, album: Optional[str] = None) -> Optional[Dict]:
         """
-        Make a request to the MusicBrainz API with retry logic.
-
-        Args:
-            endpoint: API endpoint (e.g., 'recording')
-            params: Query parameters
-
-        Returns:
-            JSON response or None if request fails
-        """
-        url = f"{self.BASE_URL}/{endpoint}"
-
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                self._rate_limit()
-
-                logger.debug(f"MusicBrainz request: {endpoint}, params: {params}, attempt {attempt + 1}/{self.MAX_RETRIES}")
-
-                response = requests.get(
-                    url,
-                    params=params,
-                    headers=self.headers,
-                    timeout=self.REQUEST_TIMEOUT
-                )
-
-                if response.status_code == 200:
-                    logger.debug(f"MusicBrainz request successful")
-                    return response.json()
-                elif response.status_code == 503:
-                    # Service unavailable, wait and retry
-                    wait_time = (attempt + 1) * 2
-                    logger.warning(f"MusicBrainz service unavailable (503), retrying in {wait_time}s...")
-                    time.sleep(wait_time)
-                    continue
-                elif response.status_code == 404:
-                    logger.info(f"MusicBrainz: No results found (404)")
-                    return None
-                else:
-                    logger.error(f"MusicBrainz request failed: {response.status_code} - {response.text}")
-                    return None
-
-            except requests.exceptions.Timeout:
-                logger.warning(f"MusicBrainz request timeout (attempt {attempt + 1}/{self.MAX_RETRIES})")
-                if attempt < self.MAX_RETRIES - 1:
-                    time.sleep((attempt + 1) * 2)
-                    continue
-            except requests.exceptions.RequestException as e:
-                logger.error(f"MusicBrainz request error: {e}")
-                return None
-
-        logger.error(f"MusicBrainz request failed after {self.MAX_RETRIES} attempts")
-        return None
-
-    def search_recording(self, artist: str, title: str, album: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """
-        Search for a recording (track) in MusicBrainz.
+        Search MusicBrainz for a track and return its metadata.
 
         Args:
             artist: Artist name
@@ -115,83 +46,85 @@ class MusicBrainzClient:
             album: Optional album name for better matching
 
         Returns:
-            Dict with metadata or None if not found:
-            {
-                'isrc': str or None,
-                'duration_ms': int or None (in milliseconds),
-                'title': str,
-                'artist': str,
-                'album': str or None,
-                'musicbrainz_id': str,
-                'score': int (matching confidence 0-100)
-            }
+            Dict with metadata or None if no match is found or an error occurs.
         """
-        # Build search query
-        query_parts = [f'artist:"{artist}"', f'recording:"{title}"']
-        if album:
-            query_parts.append(f'release:"{album}"')
+        return self.get_track_metadata(artist, title, album)
 
-        query = ' AND '.join(query_parts)
+    def get_track_metadata(self, artist: str, title: str, album: Optional[str] = None) -> Optional[Dict]:
+        """
+        Search MusicBrainz for a track and return its metadata.
+        Returns None if no match is found or an error occurs.
+        """
+        self._rate_limit()
+
+        # Construct a lucene query
+        # We use the 'recording' entity to search for tracks
+        query = f'artist:"{artist}" AND recording:"{title}"'
+        if album:
+            query += f' AND release:"{album}"'
 
         params = {
             'query': query,
             'fmt': 'json',
-            'limit': 5  # Get top 5 matches to find best one
+            'limit': 1  # We only need the top match
         }
 
-        logger.info(f"Searching MusicBrainz for: {artist} - {title}" + (f" (Album: {album})" if album else ""))
+        try:
+            url = f"{self.BASE_URL}/recording"
+            logger.info(f"Querying MusicBrainz for: {artist} - {title}")
+            response = self.session.get(url, params=params, timeout=10)
 
-        response = self._make_request('recording', params)
+            if response.status_code == 200:
+                data = response.json()
+                recordings = data.get('recordings', [])
 
-        if not response or 'recordings' not in response or not response['recordings']:
-            logger.info(f"No MusicBrainz results for: {artist} - {title}")
+                if not recordings:
+                    logger.info(f"No MusicBrainz match found for: {artist} - {title}")
+                    return None
+
+                # Take the best match (first one)
+                recording = recordings[0]
+
+                metadata = {
+                    'musicbrainz_id': recording.get('id'),
+                    'title': recording.get('title'),
+                    # Duration is in milliseconds
+                    'duration_ms': recording.get('length'),
+                    'score': recording.get('score', 0)
+                }
+
+                # Get artist name(s)
+                artist_credits = recording.get('artist-credit', [])
+                if artist_credits:
+                    metadata['artist'] = artist_credits[0].get('artist', {}).get('name')
+
+                # Get ISRCs
+                isrcs = recording.get('isrcs', [])
+                if isrcs:
+                    # ISRCs are returned as a simple list of strings
+                    metadata['isrc'] = isrcs[0]
+
+                # Get Releases (Albums/Singles)
+                releases = recording.get('releases', [])
+                if releases:
+                    # Take the title of the first release, which is often the main album/single
+                    metadata['album'] = releases[0].get('title')
+
+                logger.info(f"Found MusicBrainz metadata for: {artist} - {title} (ISRC: {metadata.get('isrc')})")
+                return metadata
+
+            elif response.status_code == 503:
+                logger.warning("MusicBrainz API is temporarily unavailable (503).")
+                return None
+            else:
+                logger.error(f"MusicBrainz API error: {response.status_code} - {response.text}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error querying MusicBrainz API: {e}")
             return None
 
-        recordings = response['recordings']
-        logger.info(f"Found {len(recordings)} MusicBrainz recording(s)")
-
-        # Get the best match (first result, highest score)
-        best_match = recordings[0]
-
-        # Extract ISRC (may be multiple, we'll take the first)
-        isrc = None
-        if 'isrcs' in best_match and best_match['isrcs']:
-            isrc = best_match['isrcs'][0]
-            logger.info(f"Found ISRC: {isrc}")
-        else:
-            logger.warning(f"No ISRC found for: {artist} - {title}")
-
-        # Extract duration (in milliseconds)
-        duration_ms = best_match.get('length')  # MusicBrainz stores duration as 'length' in ms
-        if duration_ms:
-            logger.info(f"Found duration: {duration_ms}ms ({duration_ms / 1000:.1f}s)")
-
-        # Extract artist name (use artist-credit for most accurate)
-        mb_artist = artist  # default to search artist
-        if 'artist-credit' in best_match and best_match['artist-credit']:
-            mb_artist = best_match['artist-credit'][0].get('name', artist)
-
-        # Extract album (from releases if available)
-        mb_album = None
-        if 'releases' in best_match and best_match['releases']:
-            mb_album = best_match['releases'][0].get('title')
-            logger.info(f"Found album: {mb_album}")
-
-        metadata = {
-            'isrc': isrc,
-            'duration_ms': duration_ms,
-            'title': best_match.get('title', title),
-            'artist': mb_artist,
-            'album': mb_album,
-            'musicbrainz_id': best_match.get('id'),
-            'score': best_match.get('score', 0)
-        }
-
-        logger.info(f"MusicBrainz metadata: {metadata}")
-
-        return metadata
-
-    def get_recording_by_isrc(self, isrc: str) -> Optional[Dict[str, Any]]:
+    def get_recording_by_isrc(self, isrc: str) -> Optional[Dict]:
         """
         Look up a recording by its ISRC.
 
@@ -201,6 +134,8 @@ class MusicBrainzClient:
         Returns:
             Dict with metadata or None if not found
         """
+        self._rate_limit()
+
         params = {
             'query': f'isrc:{isrc}',
             'fmt': 'json',
@@ -209,21 +144,66 @@ class MusicBrainzClient:
 
         logger.info(f"Looking up ISRC: {isrc}")
 
-        response = self._make_request('recording', params)
+        try:
+            url = f"{self.BASE_URL}/recording"
+            response = self.session.get(url, params=params, timeout=10)
 
-        if not response or 'recordings' not in response or not response['recordings']:
-            logger.info(f"No recording found for ISRC: {isrc}")
+            if response.status_code == 200:
+                data = response.json()
+                recordings = data.get('recordings', [])
+
+                if not recordings:
+                    logger.info(f"No recording found for ISRC: {isrc}")
+                    return None
+
+                recording = recordings[0]
+
+                # Extract basic metadata
+                metadata = {
+                    'isrc': isrc,
+                    'duration_ms': recording.get('length'),
+                    'title': recording.get('title'),
+                    'artist': recording['artist-credit'][0].get('name') if 'artist-credit' in recording else None,
+                    'musicbrainz_id': recording.get('id')
+                }
+
+                return metadata
+            else:
+                logger.error(f"MusicBrainz API error: {response.status_code}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error looking up ISRC: {e}")
             return None
 
-        recording = response['recordings'][0]
 
-        # Extract basic metadata
-        metadata = {
-            'isrc': isrc,
-            'duration_ms': recording.get('length'),
-            'title': recording.get('title'),
-            'artist': recording['artist-credit'][0].get('name') if 'artist-credit' in recording else None,
-            'musicbrainz_id': recording.get('id')
-        }
+# Example usage for testing:
+if __name__ == "__main__":
+    # Configure basic logging to see output in the console
+    logging.basicConfig(level=logging.INFO)
 
-        return metadata
+    client = MusicBrainzClient()
+
+    # Test case 1: A known track
+    test_artist = "Hikaru Utada"
+    test_title = "First Love"
+    print(f"\n--- Testing: {test_artist} - {test_title} ---")
+    metadata = client.get_track_metadata(test_artist, test_title)
+    if metadata:
+        print("Found Metadata:")
+        for key, value in metadata.items():
+            print(f"  {key}: {value}")
+    else:
+        print("No metadata found.")
+
+    # Test case 2: A track with Japanese characters
+    test_artist_jp = "宇多田ヒカル"
+    test_title_jp = "First Love"
+    print(f"\n--- Testing (Japanese Artist): {test_artist_jp} - {test_title_jp} ---")
+    metadata_jp = client.get_track_metadata(test_artist_jp, test_title_jp)
+    if metadata_jp:
+        print("Found Metadata:")
+        for key, value in metadata_jp.items():
+            print(f"  {key}: {value}")
+    else:
+        print("No metadata found.")
