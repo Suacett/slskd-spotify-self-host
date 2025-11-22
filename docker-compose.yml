@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  spotify-slskd-search:
+    build: .
+    container_name: spotify-slskd-search
+    restart: unless-stopped
+    ports:
+      - "5070:5000"
+    environment:
+      - SLSKD_URL=http://192.168.1.124:5030
+      - SLSKD_API_KEY=${SLSKD_API_KEY}
+      - SLSKD_URL_BASE=/
+      - SEARCH_TIMEOUT=15
+      - SEARCH_DELAY=3
+      - DATA_DIR=/app/data
+      - FLASK_ENV=production
+    volumes:
+      - ./data:/app/data
+    networks:
+      - default
+    labels:
+      - "com.spotify-slskd-search.description=Spotify to Slskd Search Aggregator"
+      - "com.spotify-slskd-search.version=1.0.0"
+
+networks:
+  default:
+    driver: bridge
+
+# For integration with existing media stack (mediaapps container):
+# 1. Copy this service definition to your /opt/media/docker-compose.yml
+# 2. Change the networks section to use your existing media_net network:
+#    networks:
+#      - media_net
+# 3. Add the network definition if not already present:
+#    networks:
+#      media_net:
+#        external: true

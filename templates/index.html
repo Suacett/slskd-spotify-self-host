@@ -1,0 +1,425 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Spotify to Slskd{% endblock %}
+
+{% block content %}
+<!-- Stats Dashboard -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-gray-400 text-sm">Total Artists</p>
+                <p class="text-3xl font-bold text-white">{{ stats.total_artists }}</p>
+            </div>
+            <div class="bg-blue-500 p-3 rounded-full">
+                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-gray-400 text-sm">With Results</p>
+                <p class="text-3xl font-bold text-white">{{ stats.artists_with_results }}</p>
+            </div>
+            <div class="bg-green-500 p-3 rounded-full">
+                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-gray-400 text-sm">Reviewed</p>
+                <p class="text-3xl font-bold text-white">{{ stats.reviewed_artists }}</p>
+            </div>
+            <div class="bg-purple-500 p-3 rounded-full">
+                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-gray-400 text-sm">Total Files</p>
+                <p class="text-3xl font-bold text-white">{{ stats.total_files }}</p>
+            </div>
+            <div class="bg-yellow-500 p-3 rounded-full">
+                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Section -->
+<div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-8">
+    <h2 class="text-2xl font-bold mb-4 text-white">Upload Spotify CSV</h2>
+
+    <!-- Drop Zone -->
+    <div id="dropZone" class="border-4 border-dashed border-gray-600 dark:border-gray-600 rounded-lg p-12 text-center cursor-pointer hover:border-purple-500 transition-colors">
+        <input type="file" id="fileInput" accept=".csv" class="hidden">
+        <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+        </svg>
+        <p class="text-xl text-gray-300 dark:text-gray-300 mb-2">Drop your Spotify CSV here or click to browse</p>
+        <p class="text-sm text-gray-400">Supports CSV files from Spotify playlist exports</p>
+    </div>
+
+    <!-- Upload Results -->
+    <div id="uploadResults" class="mt-4 hidden">
+        <div class="bg-gray-700 dark:bg-gray-700 rounded-lg p-4">
+            <p class="font-semibold text-white mb-2">Upload Summary:</p>
+            <div class="grid grid-cols-3 gap-4 text-sm">
+                <div>
+                    <span class="text-gray-400">Total Artists:</span>
+                    <span class="text-white font-bold ml-2" id="totalArtists">0</span>
+                </div>
+                <div>
+                    <span class="text-gray-400">New:</span>
+                    <span class="text-green-400 font-bold ml-2" id="newArtists">0</span>
+                </div>
+                <div>
+                    <span class="text-gray-400">Already Searched:</span>
+                    <span class="text-yellow-400 font-bold ml-2" id="existingArtists">0</span>
+                </div>
+            </div>
+            <button id="startSearchBtn" onclick="startSearch()" class="mt-4 w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all transform hover:scale-105">
+                Start Search
+            </button>
+        </div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div id="progressSection" class="mt-4 hidden">
+        <div class="bg-gray-700 dark:bg-gray-700 rounded-lg p-4">
+            <div class="flex justify-between items-center mb-2">
+                <span class="font-semibold text-white" id="progressText">Searching...</span>
+                <span class="text-gray-400" id="progressPercent">0%</span>
+            </div>
+            <div class="w-full bg-gray-600 rounded-full h-3 overflow-hidden">
+                <div id="progressBar" class="gradient-bg h-3 transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <p class="text-sm text-gray-400 mt-2">Current: <span id="currentArtist" class="text-white font-mono">-</span></p>
+            <button onclick="cancelSearch()" class="mt-3 w-full bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition">
+                Cancel Search
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Artist List -->
+<div class="bg-gray-800 dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+    <div class="p-6 border-b border-gray-700">
+        <div class="flex justify-between items-center">
+            <h2 class="text-2xl font-bold text-white">Artists</h2>
+            <div class="flex space-x-2">
+                <button onclick="filterArtists('all')" class="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition filter-btn" data-filter="all">All</button>
+                <button onclick="filterArtists('reviewed')" class="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition filter-btn" data-filter="reviewed">Reviewed</button>
+                <button onclick="filterArtists('unreviewed')" class="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition filter-btn" data-filter="unreviewed">Not Reviewed</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead class="bg-gray-700 dark:bg-gray-700">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-600" onclick="sortTable('name')">
+                        Artist Name ↕
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-600" onclick="sortTable('results')">
+                        Results ↕
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-600" onclick="sortTable('date')">
+                        Searched Date ↕
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                        Status
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                        Actions
+                    </th>
+                </tr>
+            </thead>
+            <tbody id="artistTableBody" class="bg-gray-800 dark:bg-gray-800 divide-y divide-gray-700">
+                {% for artist in artists %}
+                <tr class="hover:bg-gray-700 transition artist-row" data-reviewed="{{ artist.reviewed|lower }}">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <a href="/artist/{{ artist.name|urlencode }}" class="text-blue-400 hover:text-blue-300 font-medium">
+                            {{ artist.name }}
+                        </a>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {% if artist.result_count > 0 %}bg-green-900 text-green-200{% else %}bg-red-900 text-red-200{% endif %}">
+                            {{ artist.result_count }} files
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                        {{ artist.searched_at.split('T')[0] }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if artist.reviewed %}
+                        <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-900 text-purple-200">
+                            ✓ Reviewed
+                        </span>
+                        {% else %}
+                        <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-700 text-gray-300">
+                            Pending
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <a href="/artist/{{ artist.name|urlencode }}" class="text-blue-400 hover:text-blue-300 mr-3">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if artists|length == 0 %}
+    <div class="p-12 text-center">
+        <svg class="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+        </svg>
+        <p class="text-xl text-gray-400">No artists searched yet</p>
+        <p class="text-sm text-gray-500 mt-2">Upload a Spotify CSV to get started</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let uploadedArtists = [];
+
+    // File upload handling
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('border-purple-500');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('border-purple-500');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('border-purple-500');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFileUpload(files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFileUpload(e.target.files[0]);
+        }
+    });
+
+    async function handleFileUpload(file) {
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+            showNotification('Please upload a CSV file', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                uploadedArtists = data.artists;
+                document.getElementById('totalArtists').textContent = data.total_artists;
+                document.getElementById('newArtists').textContent = data.new_artists;
+                document.getElementById('existingArtists').textContent = data.existing_artists;
+                document.getElementById('uploadResults').classList.remove('hidden');
+
+                showNotification(`Parsed ${data.total_artists} artists from CSV`, 'success');
+            } else {
+                showNotification(data.error || 'Upload failed', 'error');
+            }
+        } catch (error) {
+            console.error('Upload error:', error);
+            showNotification('Upload failed: ' + error.message, 'error');
+        }
+    }
+
+    async function startSearch() {
+        if (uploadedArtists.length === 0) {
+            showNotification('No artists to search', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/search/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ artists: uploadedArtists })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                document.getElementById('progressSection').classList.remove('hidden');
+                document.getElementById('startSearchBtn').disabled = true;
+                startProgressPolling();
+                showNotification(data.message, 'success');
+            } else {
+                showNotification(data.error || data.message, 'info');
+            }
+        } catch (error) {
+            console.error('Search start error:', error);
+            showNotification('Failed to start search: ' + error.message, 'error');
+        }
+    }
+
+    async function cancelSearch() {
+        try {
+            await fetch('/search/cancel', { method: 'POST' });
+            showNotification('Search cancelled', 'info');
+            stopProgressPolling();
+        } catch (error) {
+            console.error('Cancel error:', error);
+        }
+    }
+
+    let progressInterval = null;
+
+    function startProgressPolling() {
+        if (progressInterval) clearInterval(progressInterval);
+
+        progressInterval = setInterval(async () => {
+            try {
+                const response = await fetch('/search/status');
+                const status = await response.json();
+
+                updateProgress(status);
+
+                if (status.completed) {
+                    stopProgressPolling();
+                    showNotification('Search completed!', 'success');
+                    setTimeout(() => location.reload(), 2000);
+                }
+            } catch (error) {
+                console.error('Progress poll error:', error);
+            }
+        }, 2000);
+    }
+
+    function stopProgressPolling() {
+        if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+        }
+    }
+
+    function updateProgress(status) {
+        const percent = status.total > 0 ? Math.round((status.progress / status.total) * 100) : 0;
+        document.getElementById('progressBar').style.width = percent + '%';
+        document.getElementById('progressPercent').textContent = percent + '%';
+        document.getElementById('progressText').textContent = `Searching ${status.progress + 1}/${status.total} artists...`;
+        document.getElementById('currentArtist').textContent = status.current_artist || '-';
+    }
+
+    // Filter artists
+    function filterArtists(filter) {
+        const rows = document.querySelectorAll('.artist-row');
+        const buttons = document.querySelectorAll('.filter-btn');
+
+        // Update button styles
+        buttons.forEach(btn => {
+            if (btn.dataset.filter === filter) {
+                btn.classList.add('bg-purple-600');
+                btn.classList.remove('bg-gray-700');
+            } else {
+                btn.classList.remove('bg-purple-600');
+                btn.classList.add('bg-gray-700');
+            }
+        });
+
+        // Filter rows
+        rows.forEach(row => {
+            const isReviewed = row.dataset.reviewed === 'true';
+
+            if (filter === 'all') {
+                row.style.display = '';
+            } else if (filter === 'reviewed' && isReviewed) {
+                row.style.display = '';
+            } else if (filter === 'unreviewed' && !isReviewed) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+
+    // Sort table
+    let sortOrder = { name: 1, results: 1, date: 1 };
+
+    function sortTable(column) {
+        const tbody = document.getElementById('artistTableBody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+
+        rows.sort((a, b) => {
+            let aVal, bVal;
+
+            if (column === 'name') {
+                aVal = a.cells[0].textContent.trim();
+                bVal = b.cells[0].textContent.trim();
+                return sortOrder.name * aVal.localeCompare(bVal);
+            } else if (column === 'results') {
+                aVal = parseInt(a.cells[1].textContent);
+                bVal = parseInt(b.cells[1].textContent);
+                return sortOrder.results * (aVal - bVal);
+            } else if (column === 'date') {
+                aVal = a.cells[2].textContent.trim();
+                bVal = b.cells[2].textContent.trim();
+                return sortOrder.date * aVal.localeCompare(bVal);
+            }
+        });
+
+        sortOrder[column] *= -1;
+
+        rows.forEach(row => tbody.appendChild(row));
+    }
+
+    // Check for active search on load
+    window.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const response = await fetch('/search/status');
+            const status = await response.json();
+
+            if (status.active) {
+                document.getElementById('progressSection').classList.remove('hidden');
+                startProgressPolling();
+            }
+        } catch (error) {
+            console.error('Status check error:', error);
+        }
+    });
+</script>
+{% endblock %}
