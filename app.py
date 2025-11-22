@@ -38,7 +38,7 @@ DEFAULT_CONFIG = {
     'SLSKD_API_KEY': os.getenv('SLSKD_API_KEY', ''),
     'SLSKD_URL_BASE': os.getenv('SLSKD_URL_BASE', '/'),
     'SEARCH_TIMEOUT': int(os.getenv('SEARCH_TIMEOUT', '15')),
-    'SEARCH_DELAY': int(os.getenv('SEARCH_DELAY', '2')),  # Reduced from 3 to 2 for faster searches
+    'SEARCH_DELAY': int(os.getenv('SEARCH_DELAY', '1')),  # Reduced from 2 to 1 for faster searches
     'DATA_DIR': os.getenv('DATA_DIR', '/app/data'),
     # Smart Quality Settings
     'MIN_BITRATE': 192,
@@ -679,19 +679,35 @@ class SlskdClient:
         payload = {"files": [filename]}
         
         logger.info(f"[DOWNLOAD] Initiating download: {filename} from {username}")
-        logger.debug(f"[DOWNLOAD] URL: {url}")
-        logger.debug(f"[DOWNLOAD] Payload: {payload}")
+        logger.info(f"[DOWNLOAD] URL: {url}")
+        logger.info(f"[DOWNLOAD] Payload: {payload}")
+        logger.info(f"[DOWNLOAD] API Key present: {bool(self.api_key)}")
         
         try:
             response = self._request_with_retry('POST', url, json=payload, timeout=10)
             result = response.json()
-            logger.info(f"[DOWNLOAD] Success response: {result}")
+            logger.info(f"[DOWNLOAD] ✓ Success! Response: {result}")
             return result
         except requests.exceptions.HTTPError as e:
-            logger.error(f"[DOWNLOAD] HTTP Error {e.response.status_code}: {e.response.text}")
+            logger.error(f"[DOWNLOAD] ✗ HTTP Error {e.response.status_code}")
+            logger.error(f"[DOWNLOAD] Response text: {e.response.text}")
+            logger.error(f"[DOWNLOAD] Request URL: {url}")
+            logger.error(f"[DOWNLOAD] Request payload: {payload}")
+            return None
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"[DOWNLOAD] ✗ Connection Error: Cannot reach Slskd at {self.host}")
+            logger.error(f"[DOWNLOAD] Error details: {e}")
+            return None
+        except requests.exceptions.Timeout as e:
+            logger.error(f"[DOWNLOAD] ✗ Timeout: Request took too long")
+            logger.error(f"[DOWNLOAD] Error details: {e}")
             return None
         except Exception as e:
-            logger.error(f"[DOWNLOAD] Failed for {filename} from {username}: {type(e).__name__}: {e}")
+            logger.error(f"[DOWNLOAD] ✗ Unexpected error for {filename} from {username}")
+            logger.error(f"[DOWNLOAD] Error type: {type(e).__name__}")
+            logger.error(f"[DOWNLOAD] Error message: {e}")
+            import traceback
+            logger.error(f"[DOWNLOAD] Traceback: {traceback.format_exc()}")
             return None
 
 
@@ -1076,8 +1092,8 @@ def background_search_task(search_items: List[Dict] = None):
             display_name = q['display']
             search_state['current_item'] = display_name
             
-            # Jitter
-            time.sleep(random.uniform(0.5, 1.5))
+            # Jitter (reduced for faster searches)
+            time.sleep(random.uniform(0.2, 0.5))
 
             try:
                 logger.info(f"Searching for: {q['query']}")
@@ -1196,7 +1212,7 @@ def background_search_task(search_items: List[Dict] = None):
         search_state['total'] = len(items_to_process) + search_state.get('progress', 0)
         save_application_state(search_state)
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             futures = [executor.submit(process_item, item) for item in items_to_process]
             concurrent.futures.wait(futures)
 
@@ -1565,10 +1581,13 @@ def download_track(track_key: str):
         # Initialize Slskd client
         client = SlskdClient(
             host=CONFIG['SLSKD_URL'],
-            api_key=CONFIG['SLSKD_API_KEY']
+            api_key=CONFIG['SLSKD_API_KEY'],
+            url_base=CONFIG['SLSKD_URL_BASE']
         )
 
         # Initiate download via Slskd API
+        logger.info(f"[DOWNLOAD_ROUTE] Attempting download for {track_key}")
+        logger.info(f"[DOWNLOAD_ROUTE] Username: {username}, Filename: {filename}")
         download_response = client.download_file(username, filename)
 
         if download_response:
@@ -1585,15 +1604,23 @@ def download_track(track_key: str):
                 musicbrainz_id=musicbrainz_data.get('musicbrainz_id') if musicbrainz_data else None
             )
 
+            logger.info(f"[DOWNLOAD_ROUTE] ✓ Download successful for {track_key}")
             return jsonify({
                 'success': True,
                 'message': f'Download initiated: {filename}',
                 'filename': filename,
                 'username': username,
-                'isrc': isrc
+                'isrc': isrc,
+                'download_response': download_response
             })
         else:
-            return jsonify({'error': 'Failed to initiate download'}), 500
+            logger.error(f"[DOWNLOAD_ROUTE] ✗ Download failed for {track_key}")
+            return jsonify({
+                'error': 'Failed to initiate download',
+                'message': 'Slskd API returned an error. Check logs for details.',
+                'filename': filename,
+                'username': username
+            }), 500
 
     except Exception as e:
         logger.error(f"Download error for {track_key}: {e}")
@@ -1615,7 +1642,8 @@ def bulk_download():
         # Initialize Slskd client
         client = SlskdClient(
             host=CONFIG['SLSKD_URL'],
-            api_key=CONFIG['SLSKD_API_KEY']
+            api_key=CONFIG['SLSKD_API_KEY'],
+            url_base=CONFIG['SLSKD_URL_BASE']
         )
 
         downloaded = 0
