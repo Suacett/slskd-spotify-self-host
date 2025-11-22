@@ -16,14 +16,14 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from io import StringIO
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, flash
 from werkzeug.utils import secure_filename
 import requests
 import difflib
 import concurrent.futures
 import pykakasi
 import random
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 # Import custom modules
 from musicbrainz_client import MusicBrainzClient
@@ -1245,7 +1245,7 @@ def track_detail(track_key: str):
     )
 
 
-@app.route('/track/<track_key>/delete', methods=['POST'])
+@app.route('/track/<path:track_key>/delete', methods=['POST'])
 def delete_track(track_key):
     """Delete a track from results and optionally re-search"""
     try:
@@ -1255,10 +1255,12 @@ def delete_track(track_key):
         track_data = search_manager.get_track_results(track_key)
         artist = ""
         title = ""
+        album = ""
         
         if track_data:
             artist = track_data.get('artist', '')
             title = track_data.get('title', '')
+            album = track_data.get('album', '')
             
         # If not in data, try to parse key
         if not artist or not title:
@@ -1268,15 +1270,18 @@ def delete_track(track_key):
             else:
                 artist = parts[0]
 
-        # Delete from results
-        search_manager.remove_track(track_key)
+        # Delete from results (Fixed: changed remove_track to delete_track)
+        success = search_manager.delete_track(track_key)
         
+        if not success:
+             return jsonify({'error': 'Track not found'}), 404
+
         if research and artist:
             # Add back to queue
             queue_manager.add_items([{
                 'artist': artist,
                 'title': title,
-                'album': track_data.get('album', '') if track_data else ''
+                'album': album
             }])
             
             # Ensure search is active
