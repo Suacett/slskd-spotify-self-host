@@ -24,6 +24,16 @@
             </p>
         </div>
         <div class="flex space-x-3">
+            <!-- Subtle Quality Filter Badge -->
+            <div
+                class="inline-flex items-center px-3 py-1 rounded-full bg-purple-900 bg-opacity-30 border border-purple-500 text-purple-300 text-xs">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Quality Filter Active
+            </div>
+
             {% if not track_data.reviewed %}
             <button onclick="markReviewed()"
                 class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 inline-flex items-center">
@@ -52,22 +62,6 @@
             </button>
         </div>
     </div>
-</div>
-
-<!-- Quality Info Banner -->
-<div class="bg-gradient-to-r from-purple-900 to-blue-900 rounded-lg p-6 mb-6 shadow-lg border border-purple-500">
-    <div class="flex items-center mb-3">
-        <svg class="w-6 h-6 mr-2 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        <h2 class="text-xl font-bold text-white">Smart Quality Filtering Active</h2>
-    </div>
-    <p class="text-purple-200 text-sm">
-        Results are automatically filtered and ranked by quality. Only the top files with good bitrate (192+ kbps or
-        lossless),
-        short queues, and fast speeds are shown. Locked files and slow sources are excluded.
-    </p>
 </div>
 
 <!-- Top Results List -->

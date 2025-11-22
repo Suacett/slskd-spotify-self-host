@@ -197,34 +197,43 @@ def passes_quality_filters(file_info: Dict) -> bool:
     speed_kbs = file_info.get('speed_kbs', 0)
     is_locked = file_info.get('is_locked', False)
     file_size = file_info.get('size', 0)
+    filename = file_info.get('filename', '')
 
     # Reject video files
     video_extensions = ['mkv', 'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mpg', 'mpeg', 'm4v']
     if extension in video_extensions:
+        logger.debug(f"[FILTER] REJECTED: {filename} - Video file (.{extension})")
         return False
 
     # Reject files over size limit
     max_size_bytes = CONFIG['MAX_FILE_SIZE_MB'] * 1024 * 1024
     if file_size > max_size_bytes:
+        size_mb = file_size / (1024 * 1024)
+        logger.debug(f"[FILTER] REJECTED: {filename} - Too large ({size_mb:.1f}MB > {CONFIG['MAX_FILE_SIZE_MB']}MB)")
         return False
 
     # Locked files are always rejected
     if is_locked:
+        logger.debug(f"[FILTER] REJECTED: {filename} - Locked")
         return False
 
     # Queue too long
     if queue_length > CONFIG['MAX_QUEUE_LENGTH']:
+        logger.debug(f"[FILTER] REJECTED: {filename} - Queue too long ({queue_length})")
         return False
 
     # Speed too slow
     if speed_kbs < CONFIG['MIN_SPEED_KBS']:
+        logger.debug(f"[FILTER] REJECTED: {filename} - Speed too slow ({speed_kbs} KB/s)")
         return False
 
     # Bitrate check (lossless formats bypass this)
     if extension not in ['flac', 'wav', 'alac', 'ape']:
         if bitrate < CONFIG['MIN_BITRATE']:
+            logger.debug(f"[FILTER] REJECTED: {filename} - Bitrate too low ({bitrate} kbps)")
             return False
 
+    logger.debug(f"[FILTER] ACCEPTED: {filename} - {extension}, {bitrate}kbps, Q:{queue_length}, {speed_kbs}KB/s")
     return True
 
 
@@ -441,12 +450,25 @@ class SlskdClient:
 
     def download_file(self, username, filename):
         """Initiate a file download"""
-        url = f"{self.base_url}/users/{username}/downloads"
+        # Slskd API format: POST /api/v0/transfers/downloads/{username}
+        # Body: { "files": ["filename"] }
+        url = f"{self.base_url}/transfers/downloads/{username}"
+        payload = {"files": [filename]}
+        
+        logger.info(f"[DOWNLOAD] Initiating download: {filename} from {username}")
+        logger.debug(f"[DOWNLOAD] URL: {url}")
+        logger.debug(f"[DOWNLOAD] Payload: {payload}")
+        
         try:
-            response = self._request_with_retry('POST', url, json={'filename': filename}, timeout=10)
-            return response.json()
+            response = self._request_with_retry('POST', url, json=payload, timeout=10)
+            result = response.json()
+            logger.info(f"[DOWNLOAD] Success response: {result}")
+            return result
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"[DOWNLOAD] HTTP Error {e.response.status_code}: {e.response.text}")
+            return None
         except Exception as e:
-            logger.error(f"Download init failed for {filename} from {username}: {e}")
+            logger.error(f"[DOWNLOAD] Failed for {filename} from {username}: {type(e).__name__}: {e}")
             return None
 
 
