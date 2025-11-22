@@ -1,167 +1,393 @@
 {% extends "base.html" %}
 
+{% block title %}Results: {{ track_data.artist }} - {{ track_data.title }} - Spotify to Slskd{% endblock %}
+
 {% block content %}
-<div class="space-y-6">
-    <!-- Header -->
-    <div class="flex justify-between items-start">
-        <div>
-            <a href="/" class="text-sm text-gray-500 hover:text-gray-300 mb-2 inline-block">← Back to Dashboard</a>
-            <h1 class="text-3xl font-bold text-white">{{ track.artist }} - {{ track.title }}</h1>
-            <p class="text-gray-400">{{ track.album }}</p>
-        </div>
+<!-- Header -->
+<div class="mb-6">
+    <a href="/" class="text-blue-400 hover:text-blue-300 inline-flex items-center mb-4">
+        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+        </svg>
+        Back to Dashboard
+    </a>
 
-        <div class="flex space-x-3">
-            <button onclick="deleteTrack()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
-                Re-Search / Delete
-            </button>
+    <!-- MusicBrainz Metadata Box -->
+    {% if musicbrainz_data %}
+    <div class="bg-blue-900 bg-opacity-20 border border-blue-700 rounded-lg p-4 mb-6">
+        <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-bold text-blue-300 uppercase tracking-wider">MusicBrainz Metadata</h3>
+            <span class="text-xs text-blue-400 font-mono">ISRC: {{ musicbrainz_data.isrc or 'N/A' }}</span>
         </div>
-    </div>
-
-    <!-- MusicBrainz Metadata -->
-    {% if track.musicbrainz %}
-    <div class="bg-blue-900 bg-opacity-20 border border-blue-800 rounded p-4 flex justify-between items-center">
-        <div>
-            <h3 class="text-blue-400 font-bold text-sm uppercase">MusicBrainz Verified</h3>
-            <div class="text-white text-sm mt-1">
-                ISRC: <span class="font-mono">{{ track.musicbrainz.isrc }}</span> |
-                Duration: {{ (track.musicbrainz.duration_ms / 1000)|round|int }}s
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div>
+                <span class="text-gray-400 block">Official Title</span>
+                <span class="text-white font-medium">{{ musicbrainz_data.title }}</span>
+            </div>
+            <div>
+                <span class="text-gray-400 block">Official Album</span>
+                <span class="text-white font-medium">{{ musicbrainz_data.album or 'N/A' }}</span>
+            </div>
+            <div>
+                <span class="text-gray-400 block">Duration</span>
+                <span class="text-white font-medium">
+                    {% if musicbrainz_data.duration_ms %}
+                    {{ (musicbrainz_data.duration_ms / 1000) | round | int }}s
+                    {% else %}
+                    N/A
+                    {% endif %}
+                </span>
             </div>
         </div>
-        {% if is_duplicate %}
-        <div class="bg-red-900 bg-opacity-50 text-red-200 px-3 py-1 rounded text-sm border border-red-700">
-            ⚠ Downloaded Duplicate
-        </div>
-        {% endif %}
     </div>
     {% endif %}
 
-    <!-- Controls -->
-    <div class="flex items-center justify-between bg-gray-800 p-4 rounded">
-        <div class="flex items-center space-x-3">
-            <span class="text-gray-300 font-medium">Smart Quality Filter</span>
-            <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" id="smart-toggle" class="sr-only peer" {% if track.smart_filter %}checked{% endif
-                    %} onchange="toggleSmartFilter()">
-                <div
-                    class="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600">
-                </div>
-            </label>
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-4xl font-bold text-white mb-2">{{ track_data.artist }} - {{ track_data.title }}</h1>
+            {% if track_data.album %}
+            <p class="text-gray-300 mb-2">Album: {{ track_data.album }}</p>
+            {% endif %}
+
+            <!-- MusicBrainz Metadata -->
+            {% if musicbrainz_data %}
+            <div class="flex items-center space-x-4 text-sm text-gray-400 mb-2">
+                {% if musicbrainz_data.isrc %}
+                <span class="bg-gray-700 px-2 py-1 rounded">ISRC: {{ musicbrainz_data.isrc }}</span>
+                {% endif %}
+                {% if musicbrainz_data.duration_ms %}
+                <span class="bg-gray-700 px-2 py-1 rounded">Duration: {{ (musicbrainz_data.duration_ms / 1000) |
+                    round(1) }}s</span>
+                {% endif %}
+                {% if musicbrainz_data.album %}
+                <span class="bg-gray-700 px-2 py-1 rounded">MB Album: {{ musicbrainz_data.album }}</span>
+                {% endif %}
+                <span class="bg-green-700 px-2 py-1 rounded">✓ MusicBrainz Verified</span>
+            </div>
+            {% endif %}
+
+            <p class="text-gray-400">
+                Found {{ track_data.result_count }} top quality files {% if track_data.result_count > 20 %}(showing top
+                20){% endif %} •
+                Searched on {{ track_data.searched_at.split('T')[0] }}
+            </p>
+
+            <!-- Duplicate Warning -->
+            {% if is_duplicate %}
+            <div class="mt-3 p-3 bg-red-900 bg-opacity-30 border border-red-500 rounded-lg">
+                <p class="text-red-300 font-semibold">
+                    ⚠️ This track has already been downloaded (ISRC match detected)
+                </p>
+            </div>
+            {% endif %}
         </div>
-        <div class="text-sm text-gray-400">
-            Showing <span id="visible-count">0</span> of {{ results|length }} results
+        <div class="flex space-x-3">
+            <!-- Subtle Quality Filter Badge -->
+            <div
+                class="inline-flex items-center px-3 py-1 rounded-full bg-purple-900 bg-opacity-30 border border-purple-500 text-purple-300 text-xs">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Quality Filter Active
+            </div>
+
+            {% if not track_data.reviewed %}
+            <button onclick="markReviewed()"
+                class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 inline-flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                Mark as Reviewed
+            </button>
+            {% else %}
+            <div class="bg-green-900 text-green-200 font-bold py-3 px-6 rounded-lg inline-flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Reviewed
+            </div>
+            {% endif %}
+            <button onclick="deleteAndResearch()"
+                class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition inline-flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                    </path>
+                </svg>
+                Re-search
+            </button>
         </div>
     </div>
+</div>
 
-    <!-- Results Table -->
-    <div class="bg-white dark:bg-gray-800 shadow rounded overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-700">
-            <thead class="bg-gray-50 dark:bg-gray-900">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bitrate
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score
-                    </th>
-                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Action
-                    </th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-700" id="results-body">
-                {% for r in results %}
-                <tr class="result-row {% if loop.index > 20 %}hidden{% endif %} hover:bg-gray-700 transition">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-white">
-                        <div class="truncate w-64" title="{{ r.filename }}">{{ r.filename }}</div>
-                        <div class="text-xs text-gray-500">{{ r.username }}</div>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                        {{ (r.size / 1024 / 1024)|round(1) }} MB
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                        {{ r.bitrate }} kbps
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+<!-- Top Results List -->
+{% if track_data.result_count > 0 %}
+<div class="space-y-4">
+    {% for result in track_data.results %}
+    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-[1.01] overflow-hidden border-l-4
+        {% if result.extension in ['flac', 'wav', 'alac', 'ape'] %}
+        border-purple-500
+        {% elif result.bitrate >= 320 %}
+        border-blue-500
+        {% else %}
+        border-gray-600
+        {% endif %}">
+        <div class="p-6">
+            <!-- Header Row -->
+            <div class="flex justify-between items-start mb-4">
+                <div class="flex-1">
+                    <div class="flex items-center space-x-3 mb-2">
+                        <span class="text-2xl font-bold text-white">#{{ loop.index }}</span>
+
+                        <!-- Quality Badge -->
+                        {% if result.extension in ['flac', 'wav', 'alac', 'ape'] %}
                         <span
-                            class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                            {% if r.quality_score > 80 %}bg-green-100 text-green-800{% elif r.quality_score > 0 %}bg-yellow-100 text-yellow-800{% else %}bg-red-100 text-red-800{% endif %}">
-                            {{ r.quality_score }}
+                            class="px-4 py-2 inline-flex text-sm font-bold rounded-full bg-purple-900 text-purple-200 border border-purple-500">
+                            🎵 {{ result.extension.upper() }} • LOSSLESS
                         </span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button onclick="download('{{ r.username }}', '{{ r.filename }}')"
-                            class="text-blue-400 hover:text-blue-300">Download</button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% if results|length > 20 %}
-        <div class="p-4 text-center border-t border-gray-700">
-            <button onclick="loadMore()" id="load-more-btn" class="text-blue-400 hover:text-blue-300 font-medium">Load
-                More Results</button>
+                        {% elif result.bitrate >= 320 %}
+                        <span
+                            class="px-4 py-2 inline-flex text-sm font-bold rounded-full bg-blue-900 text-blue-200 border border-blue-500">
+                            🎧 {{ result.bitrate }} kbps • HIGH QUALITY
+                        </span>
+                        {% elif result.bitrate >= 256 %}
+                        <span class="px-4 py-2 inline-flex text-sm font-bold rounded-full bg-green-900 text-green-200">
+                            {{ result.bitrate }} kbps
+                        </span>
+                        {% else %}
+                        <span class="px-4 py-2 inline-flex text-sm font-bold rounded-full bg-gray-700 text-gray-300">
+                            {{ result.bitrate }} kbps
+                        </span>
+                        {% endif %}
+
+                        <!-- Quality Score -->
+                        {% if result.quality_score %}
+                        <span
+                            class="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-yellow-900 text-yellow-200">
+                            ⭐ Score: {{ "%.1f"|format(result.quality_score) }}
+                        </span>
+                        {% endif %}
+
+                        <!-- Instant Download Badge -->
+                        {% if result.queue_length == 0 or result.has_free_slot %}
+                        <span
+                            class="px-3 py-1 inline-flex text-xs font-bold rounded-full bg-green-600 text-white animate-pulse">
+                            ⚡ INSTANT START
+                        </span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Filename -->
+                    <p class="mono text-white text-lg font-medium break-all">
+                        {{ result.filename }}
+                    </p>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-4 gap-4 mb-4">
+                <div class="text-center bg-gray-700 rounded-lg p-3">
+                    <p class="text-gray-400 text-xs uppercase">Size</p>
+                    <p class="text-white font-bold">{{ "%.1f"|format(result.size / (1024*1024)) }} MB</p>
+                </div>
+
+                <div class="text-center bg-gray-700 rounded-lg p-3">
+                    <p class="text-gray-400 text-xs uppercase">Queue</p>
+                    <p
+                        class="{% if result.queue_length == 0 %}text-green-400{% elif result.queue_length <= 10 %}text-yellow-400{% else %}text-red-400{% endif %} font-bold">
+                        {% if result.queue_length == 0 %}
+                        No Wait
+                        {% else %}
+                        {{ result.queue_length }} slots
+                        {% endif %}
+                    </p>
+                </div>
+
+                <div class="text-center bg-gray-700 rounded-lg p-3">
+                    <p class="text-gray-400 text-xs uppercase">Speed</p>
+                    <p class="text-white font-bold">
+                        {% if result.speed_kbs >= 1000 %}
+                        {{ "%.1f"|format(result.speed_kbs / 1024) }} MB/s
+                        {% else %}
+                        {{ "%.0f"|format(result.speed_kbs) }} KB/s
+                        {% endif %}
+                    </p>
+                </div>
+
+                <div class="text-center bg-gray-700 rounded-lg p-3">
+                    <p class="text-gray-400 text-xs uppercase">User</p>
+                    <p class="text-white font-bold truncate" title="{{ result.username }}">{{ result.username }}</p>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="grid grid-cols-2 gap-3">
+                {% if loop.index == 1 %}
+                <!-- Download button for top result -->
+                <button onclick="downloadTrack()"
+                    class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 {% if is_duplicate %}opacity-50 cursor-not-allowed{% endif %}"
+                    {% if is_duplicate %}disabled title="Track already downloaded" {% endif %}>
+                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                    {% if is_duplicate %}Already Downloaded{% else %}Download Now{% endif %}
+                </button>
+                {% else %}
+                <div></div>
+                {% endif %}
+
+                <a href="{{ slskd_url }}" target="_blank" rel="noopener noreferrer"
+                    class="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 text-center">
+                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                    </svg>
+                    Open in Slskd
+                </a>
+            </div>
         </div>
-        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+{% else %}
+<!-- No Results -->
+<div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-12 text-center shadow-lg">
+    <svg class="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+    </svg>
+    <p class="text-xl text-gray-400 mb-2">No quality results found for this artist</p>
+    <p class="text-sm text-gray-500">
+        Try adjusting your quality filters in <a href="/settings" class="text-blue-400 hover:text-blue-300">Settings</a>
+        or re-search this artist to get updated results.
+    </p>
+</div>
+{% endif %}
+
+<!-- Quality Guide -->
+<div class="mt-8 bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
+    <h3 class="text-lg font-bold text-white mb-4 flex items-center">
+        <svg class="w-5 h-5 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253">
+            </path>
+        </svg>
+        Quality Guide
+    </h3>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+            <h4 class="font-semibold text-purple-300 mb-2">🎵 Audio Quality</h4>
+            <ul class="space-y-1 text-sm text-gray-300">
+                <li><span class="text-purple-400">●</span> <strong>FLAC/Lossless</strong> - Perfect quality, larger
+                    files</li>
+                <li><span class="text-blue-400">●</span> <strong>320 kbps</strong> - Excellent quality, smaller files
+                </li>
+                <li><span class="text-green-400">●</span> <strong>256 kbps</strong> - Very good quality</li>
+                <li><span class="text-gray-400">●</span> <strong>192 kbps</strong> - Good quality (minimum shown)</li>
+            </ul>
+        </div>
+
+        <div>
+            <h4 class="font-semibold text-blue-300 mb-2">⚡ Download Priority</h4>
+            <ul class="space-y-1 text-sm text-gray-300">
+                <li><span class="text-green-400">✓</span> <strong>No Queue</strong> - Download immediately</li>
+                <li><span class="text-yellow-400">✓</span> <strong>Short Queue (1-10)</strong> - Quick wait</li>
+                <li><span class="text-orange-400">⚠</span> <strong>Medium Queue (11-50)</strong> - Some wait time</li>
+                <li><span class="text-red-400">✗</span> <strong>Long Queue (50+)</strong> - Filtered out</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="mt-4 p-3 bg-blue-900 bg-opacity-20 rounded-lg border border-blue-700">
+        <p class="text-sm text-blue-200">
+            <strong>💡 Tip:</strong> Results are ranked by a smart scoring system that considers format, bitrate, speed,
+            and queue length.
+            The best files appear first. Adjust filtering in <a href="/settings"
+                class="text-blue-400 hover:text-blue-300 underline">Settings</a>.
+        </p>
     </div>
 </div>
 
-<!-- Duplicate Modal -->
-<div id="dup-modal" class="fixed inset-0 bg-black bg-opacity-75 hidden items-center justify-center z-50">
-    <div class="bg-gray-800 p-6 rounded-lg max-w-sm w-full border border-red-600">
-        <h3 class="text-xl font-bold text-white mb-2">Duplicate Detected</h3>
-        <p class="text-gray-300 mb-4">This track (ISRC match) is already in your history.</p>
-        <button onclick="document.getElementById('dup-modal').classList.add('hidden')"
-            class="w-full bg-gray-600 text-white py-2 rounded">Close</button>
-    </div>
-</div>
+{% endblock %}
 
+{% block scripts %}
 <script>
-    function updateCount() {
-        const visible = document.querySelectorAll('.result-row:not(.hidden)').length;
-        document.getElementById('visible-count').innerText = visible;
-    }
-    updateCount();
+    const trackKey = {{ track_key| tojson }};
 
-    function loadMore() {
-        const hidden = document.querySelectorAll('.result-row.hidden');
-        for (let i = 0; i < 20 && i < hidden.length; i++) {
-            hidden[i].classList.remove('hidden');
-        }
-        if (document.querySelectorAll('.result-row.hidden').length === 0) {
-            document.getElementById('load-more-btn').style.display = 'none';
-        }
-        updateCount();
-    }
-
-    async function toggleSmartFilter() {
-        const res = await fetch('/api/toggle_quality/{{ track_key|urlencode }}', { method: 'POST' });
-        if (res.ok) window.location.reload();
-    }
-
-    async function deleteTrack() {
-        if (!confirm('Delete and Re-Search?')) return;
-        const res = await fetch('/track/{{ track_key|urlencode }}/delete', { method: 'POST' });
-        if (res.ok) window.location.href = '/';
-    }
-
-    async function download(username, filename) {
+    async function markReviewed() {
         try {
-            const res = await fetch('/download/{{ track_key|urlencode }}', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, filename })
+            const response = await fetch(`/api/mark_reviewed/${encodeURIComponent(trackKey)}`, {
+                method: 'POST'
             });
 
-            if (res.status === 409) {
-                document.getElementById('dup-modal').classList.remove('hidden');
-                document.getElementById('dup-modal').classList.add('flex');
-                return;
-            }
+            const data = await response.json();
 
-            const data = await res.json();
-            if (data.success) alert('Download Started!');
-            else alert('Error: ' + data.error);
-        } catch (e) {
-            alert('Request failed');
+            if (data.success) {
+                showNotification('Marked as reviewed!', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showNotification('Failed to mark as reviewed', 'error');
+            }
+        } catch (error) {
+            console.error('Mark reviewed error:', error);
+            showNotification('Error: ' + error.message, 'error');
+        }
+    }
+
+    async function deleteAndResearch() {
+        if (!confirm('Are you sure you want to delete this track and re-search? This will remove all current results.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/track/${encodeURIComponent(trackKey)}/delete`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                showNotification('Track deleted. Redirecting...', 'success');
+                setTimeout(() => window.location.href = '/', 1500);
+            } else {
+                showNotification('Failed to delete track', 'error');
+            }
+        } catch (error) {
+            console.error('Delete error:', error);
+            showNotification('Error: ' + error.message, 'error');
+        }
+    }
+
+    async function downloadTrack() {
+        try {
+            const response = await fetch(`/download/${encodeURIComponent(trackKey)}`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.status === 409) {
+                // Duplicate detected
+                showNotification(`Duplicate: ${data.message}`, 'error');
+                if (data.original_download) {
+                    console.log('Original download:', data.original_download);
+                }
+            } else if (data.success) {
+                showNotification(`Download initiated: ${data.filename}`, 'success');
+                if (data.isrc) {
+                    console.log('Downloaded track ISRC:', data.isrc);
+                }
+            } else {
+                showNotification(data.error || 'Download failed', 'error');
+            }
+        } catch (error) {
+            console.error('Download error:', error);
+            showNotification('Error: ' + error.message, 'error');
         }
     }
 </script>
