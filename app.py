@@ -22,6 +22,7 @@ import requests
 import difflib
 import concurrent.futures
 import pykakasi
+import random
 from urllib.parse import quote
 
 # Configuration file path
@@ -640,33 +641,39 @@ def background_search_task(search_items: List[Dict]):
         if not search_state['active']:
             return
 
-        artist = item.get('artist', '')
+        artist_str = item.get('artist', '')
         title = item.get('title', '')
         search_mode = search_state.get('mode', 'artist_title')
+        
+        # Split artists (handle comma and ampersand)
+        artists = [a.strip() for a in artist_str.replace('&', ',').split(',') if a.strip()]
+        if not artists:
+            artists = [artist_str]
         
         # Determine search queries based on mode
         queries = []
         
-        if search_mode == 'artist_only':
-            queries.append({'query': artist, 'display': artist, 'type': 'original'})
-            # Add Romaji variant if different
-            romaji_artist = romanizer.to_romaji(artist)
-            if romaji_artist and romaji_artist != artist:
-                queries.append({'query': romaji_artist, 'display': f"{artist} ({romaji_artist})", 'type': 'romaji'})
-                
-        else: # artist_title
-            if title:
-                queries.append({'query': f"{artist} {title}", 'display': f"{artist} - {title}", 'type': 'original'})
-                # Add Romaji variant
-                romaji_artist = romanizer.to_romaji(artist)
-                romaji_title = romanizer.to_romaji(title)
-                if (romaji_artist and romaji_artist != artist) or (romaji_title and romaji_title != title):
-                    # Try mixed combinations? For now just full romaji
-                    r_artist = romaji_artist if romaji_artist else artist
-                    r_title = romaji_title if romaji_title else title
-                    queries.append({'query': f"{r_artist} {r_title}", 'display': f"{artist} - {title} (Romaji)", 'type': 'romaji'})
-            else:
+        for artist in artists:
+            if search_mode == 'artist_only':
                 queries.append({'query': artist, 'display': artist, 'type': 'original'})
+                # Add Romaji variant if different
+                romaji_artist = romanizer.to_romaji(artist)
+                if romaji_artist and romaji_artist != artist:
+                    queries.append({'query': romaji_artist, 'display': f"{artist} ({romaji_artist})", 'type': 'romaji'})
+                    
+            else: # artist_title
+                if title:
+                    queries.append({'query': f"{artist} {title}", 'display': f"{artist} - {title}", 'type': 'original'})
+                    # Add Romaji variant
+                    romaji_artist = romanizer.to_romaji(artist)
+                    romaji_title = romanizer.to_romaji(title)
+                    if (romaji_artist and romaji_artist != artist) or (romaji_title and romaji_title != title):
+                        # Try mixed combinations? For now just full romaji
+                        r_artist = romaji_artist if romaji_artist else artist
+                        r_title = romaji_title if romaji_title else title
+                        queries.append({'query': f"{r_artist} {r_title}", 'display': f"{artist} - {title} (Romaji)", 'type': 'romaji'})
+                else:
+                    queries.append({'query': artist, 'display': artist, 'type': 'original'})
 
         for q in queries:
             if not search_state['active']:
@@ -675,8 +682,8 @@ def background_search_task(search_items: List[Dict]):
             display_name = q['display']
             search_state['current_item'] = display_name
             
-            # Jitter (Increased to prevent 429s)
-            time.sleep(0.5)
+            # Jitter (Randomized 1.5-3.0s)
+            time.sleep(random.uniform(1.5, 3.0))
 
             # Check if already searched (skip only if we have results?)
             # For now, let's search all variants if not found
@@ -806,8 +813,8 @@ def background_search_task(search_items: List[Dict]):
         # Update progress
         search_state['progress'] += 1
 
-    # Use ThreadPoolExecutor for concurrency (Reduced to 10 for stability)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    # Use ThreadPoolExecutor for concurrency (Reduced to 5 for stability)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(process_item, item) for item in search_items]
         concurrent.futures.wait(futures)
 
