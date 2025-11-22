@@ -25,6 +25,10 @@ import pykakasi
 import random
 from urllib.parse import quote
 
+# Import custom modules
+from musicbrainz_client import MusicBrainzClient
+from isrc_tracker import ISRCTracker
+
 # Configuration file path
 CONFIG_FILE = Path(os.getenv('DATA_DIR', '/app/data')) / 'config.json'
 
@@ -34,7 +38,7 @@ DEFAULT_CONFIG = {
     'SLSKD_API_KEY': os.getenv('SLSKD_API_KEY', ''),
     'SLSKD_URL_BASE': os.getenv('SLSKD_URL_BASE', '/'),
     'SEARCH_TIMEOUT': int(os.getenv('SEARCH_TIMEOUT', '15')),
-    'SEARCH_DELAY': int(os.getenv('SEARCH_DELAY', '3')),
+    'SEARCH_DELAY': int(os.getenv('SEARCH_DELAY', '2')),  # Reduced from 3 to 2 for faster searches
     'DATA_DIR': os.getenv('DATA_DIR', '/app/data'),
     # Smart Quality Settings
     'MIN_BITRATE': 192,
@@ -110,10 +114,12 @@ RESULTS_FILE = Path(CONFIG['DATA_DIR']) / 'search_results.json'
 WATCHLIST_FILE = Path(CONFIG['DATA_DIR']) / 'watch_list.json'
 
 
-def calculate_quality_score(file_info: Dict, requested_title: str = "") -> float:
+def calculate_quality_score(file_info: Dict, requested_title: str = "", musicbrainz_metadata: Optional[Dict] = None) -> float:
     """
     Calculate quality score for a file based on:
     - Fuzzy Name Match (critical)
+    - Duration Match (using MusicBrainz data)
+    - Album Match (using MusicBrainz data)
     - Bitrate/Format
     - Upload Speed
     - Queue Length
@@ -126,17 +132,17 @@ def calculate_quality_score(file_info: Dict, requested_title: str = "") -> float
         # Clean up filename for comparison (remove extension, underscores)
         clean_filename = Path(filename).stem.replace('_', ' ').replace('-', ' ').lower()
         clean_title = requested_title.lower()
-        
+
         # Negative Filtering (Blacklist)
         blacklist = ['instrumental', 'karaoke', 'cover', 'live', 'remix', 'acapella']
         for word in blacklist:
             if word in clean_filename and word not in clean_title:
                 score -= 500  # Heavy penalty for unwanted versions
-                
+
         # Check for exact containment first
         if clean_title in clean_filename:
             score += 50
-        
+
         # Fuzzy match ratio
         matcher = difflib.SequenceMatcher(None, clean_title, clean_filename)
         ratio = matcher.ratio()
@@ -147,7 +153,48 @@ def calculate_quality_score(file_info: Dict, requested_title: str = "") -> float
         elif ratio < 0.4:
             score -= 100  # Irrelevant result
 
-    # 2. Bitrate Tiering
+    # 2. Duration Verification (MusicBrainz)
+    if musicbrainz_metadata and musicbrainz_metadata.get('duration_ms'):
+        mb_duration_seconds = musicbrainz_metadata['duration_ms'] / 1000.0
+        file_duration = file_info.get('duration_seconds')  # This comes from Slskd file length
+
+        if file_duration:
+            duration_diff = abs(mb_duration_seconds - file_duration)
+            if duration_diff <= 2:
+                # Perfect match (within 2 seconds)
+                score += 100
+                logger.debug(f"[QUALITY] Duration perfect match: {file_duration}s vs {mb_duration_seconds:.1f}s (diff: {duration_diff:.1f}s)")
+            elif duration_diff <= 5:
+                # Good match (within 5 seconds)
+                score += 50
+                logger.debug(f"[QUALITY] Duration good match: {file_duration}s vs {mb_duration_seconds:.1f}s (diff: {duration_diff:.1f}s)")
+            elif duration_diff <= 10:
+                # Acceptable match
+                score += 20
+                logger.debug(f"[QUALITY] Duration acceptable match: {file_duration}s vs {mb_duration_seconds:.1f}s (diff: {duration_diff:.1f}s)")
+            else:
+                # Likely wrong version (radio edit, extended, etc.)
+                score -= 200
+                logger.debug(f"[QUALITY] Duration mismatch penalty: {file_duration}s vs {mb_duration_seconds:.1f}s (diff: {duration_diff:.1f}s)")
+
+    # 3. Album Verification (MusicBrainz)
+    if musicbrainz_metadata and musicbrainz_metadata.get('album'):
+        mb_album = musicbrainz_metadata['album'].lower()
+        # Extract potential album name from file path
+        file_path_lower = filename.lower()
+
+        # Fuzzy match album name in file path
+        matcher = difflib.SequenceMatcher(None, mb_album, file_path_lower)
+        ratio = matcher.ratio()
+
+        if ratio > 0.7:
+            score += 75
+            logger.debug(f"[QUALITY] Album match bonus: '{mb_album}' found in path (ratio: {ratio:.2f})")
+        elif ratio > 0.5:
+            score += 30
+            logger.debug(f"[QUALITY] Album partial match: '{mb_album}' (ratio: {ratio:.2f})")
+
+    # 4. Bitrate Tiering
     bitrate = file_info.get('bitrate', 0)
     extension = file_info.get('extension', '').lower()
 
@@ -160,7 +207,7 @@ def calculate_quality_score(file_info: Dict, requested_title: str = "") -> float
     else:
         score -= 100  # Instant reject for low quality
 
-    # 3. Queue Penalty
+    # 5. Queue Penalty
     queue_length = file_info.get('queue_length', 0)
     if queue_length == 0:
         score += 50
@@ -169,7 +216,7 @@ def calculate_quality_score(file_info: Dict, requested_title: str = "") -> float
     elif queue_length >= 10:
         score -= 100  # Reject heavy queues
 
-    # Speed scoring (minor factor)
+    # 6. Speed scoring (minor factor)
     speed_kbs = file_info.get('speed_kbs', 0)
     if speed_kbs >= 1000:
         score += 20
@@ -237,9 +284,13 @@ def passes_quality_filters(file_info: Dict) -> bool:
     return True
 
 
-def rank_and_filter_results(results: List[Dict]) -> List[Dict]:
+def rank_and_filter_results(results: List[Dict], musicbrainz_metadata: Optional[Dict] = None) -> List[Dict]:
     """
     Filter results based on quality criteria and return top N ranked results.
+
+    Args:
+        results: List of search results
+        musicbrainz_metadata: Optional MusicBrainz metadata for enhanced scoring
 
     Returns:
         List of top quality results, ranked by score
@@ -248,8 +299,12 @@ def rank_and_filter_results(results: List[Dict]) -> List[Dict]:
     filtered_results = []
     for result in results:
         if passes_quality_filters(result):
-            # Calculate quality score
-            result['quality_score'] = calculate_quality_score(result, result.get('requested_title', ''))
+            # Calculate quality score with MusicBrainz data
+            result['quality_score'] = calculate_quality_score(
+                result,
+                result.get('requested_title', ''),
+                musicbrainz_metadata
+            )
             filtered_results.append(result)
 
     # Sort by quality score (descending)
@@ -324,13 +379,14 @@ class SearchManager:
             return True
         return False
 
-    def add_track_results(self, track_key: str, artist: str, title: str, album: str, results: List[Dict], search_id: str = ""):
-        """Add or update results for a track"""
+    def add_track_results(self, track_key: str, artist: str, title: str, album: str, results: List[Dict],
+                         search_id: str = "", musicbrainz_metadata: Optional[Dict] = None):
+        """Add or update results for a track with optional MusicBrainz metadata"""
         with self.lock:
             if 'tracks' not in self.results:
                 self.results['tracks'] = {}
-            
-            self.results['tracks'][track_key] = {
+
+            track_data = {
                 'artist': artist,
                 'title': title,
                 'album': album,
@@ -340,6 +396,12 @@ class SearchManager:
                 'search_id': search_id,
                 'results': results
             }
+
+            # Add MusicBrainz metadata if available
+            if musicbrainz_metadata:
+                track_data['musicbrainz'] = musicbrainz_metadata
+
+            self.results['tracks'][track_key] = track_data
             self.save_results()
 
     def get_stats(self) -> Dict:
@@ -539,6 +601,8 @@ class Romanizer:
 search_manager = SearchManager()
 watchlist_manager = WatchListManager()
 romanizer = Romanizer()
+musicbrainz_client = MusicBrainzClient(user_agent="slskd-spotify-self-host/1.0 (https://github.com/yourusername/slskd-spotify-self-host)")
+isrc_tracker = ISRCTracker(data_dir=CONFIG['DATA_DIR'])
 
 
 def parse_spotify_csv(file_path: Path) -> List[Dict]:
@@ -731,6 +795,32 @@ def background_search_task(search_items: List[Dict]):
         title = item.get('title', '')
         album = item.get('album', '')
         search_mode = search_state.get('mode', 'artist_title')
+
+        # STEP 1: Query MusicBrainz for canonical metadata
+        musicbrainz_metadata = None
+        if title:  # Only query MusicBrainz if we have a specific track
+            try:
+                logger.info(f"[MUSICBRAINZ] Querying metadata for: {artist_str} - {title}")
+                musicbrainz_metadata = musicbrainz_client.search_recording(
+                    artist=artist_str,
+                    title=title,
+                    album=album if album else None
+                )
+
+                if musicbrainz_metadata:
+                    logger.info(f"[MUSICBRAINZ] ✓ Found metadata: ISRC={musicbrainz_metadata.get('isrc')}, "
+                              f"Duration={musicbrainz_metadata.get('duration_ms')}ms, "
+                              f"Album={musicbrainz_metadata.get('album')}, "
+                              f"Score={musicbrainz_metadata.get('score')}")
+                    # Store metadata in item for later use
+                    item['musicbrainz_metadata'] = musicbrainz_metadata
+                else:
+                    logger.warning(f"[MUSICBRAINZ] No metadata found for: {artist_str} - {title}")
+
+            except Exception as e:
+                logger.error(f"[MUSICBRAINZ] Error querying for {artist_str} - {title}: {e}")
+                # Continue without MusicBrainz data
+                pass
         
         # Split artists (handle comma and ampersand)
         artists = [a.strip() for a in artist_str.replace('&', ',').split(',') if a.strip()]
@@ -783,9 +873,9 @@ def background_search_task(search_items: List[Dict]):
 
             display_name = q['display']
             search_state['current_item'] = display_name
-            
-            # Jitter (Randomized 1.5-3.0s)
-            time.sleep(random.uniform(1.5, 3.0))
+
+            # Jitter (Randomized 0.5-1.5s for faster searches)
+            time.sleep(random.uniform(0.5, 1.5))
 
             # Check if already searched (skip only if we have results?)
             # For now, let's search all variants if not found
@@ -832,6 +922,9 @@ def background_search_task(search_items: List[Dict]):
                             has_free_slot = file_info.get('hasFreeUploadSlot', False)
                             is_locked = file_info.get('isLocked', False)
 
+                            # Extract duration (length in seconds, Slskd may provide this)
+                            duration_seconds = file_info.get('length')  # Duration in seconds
+
                             result_dict = {
                                 'username': username,
                                 'filename': filename,
@@ -842,13 +935,16 @@ def background_search_task(search_items: List[Dict]):
                                 'speed_kbs': speed_kbs,
                                 'has_free_slot': has_free_slot,
                                 'is_locked': is_locked,
+                                'duration_seconds': duration_seconds,
                                 'requested_title': title if title else artist # For fuzzy match
                             }
                             all_results.append(result_dict)
                         except:
                             continue
 
-                    top_results = rank_and_filter_results(all_results)
+                    # Get MusicBrainz metadata from item
+                    mb_metadata = item.get('musicbrainz_metadata')
+                    top_results = rank_and_filter_results(all_results, mb_metadata)
                     
                     if top_results:
                         # Store results under the original display name (Artist - Title)
@@ -901,9 +997,12 @@ def background_search_task(search_items: List[Dict]):
         unique_results = unique_results[:CONFIG['TOP_RESULTS_COUNT']]
         
         if unique_results:
-            # Use the new add_track_results method
-            search_manager.add_track_results(main_key, artist, title, album, unique_results, "")
-            
+            # Get MusicBrainz metadata from item
+            mb_metadata = item.get('musicbrainz_metadata')
+
+            # Use the new add_track_results method with MusicBrainz metadata
+            search_manager.add_track_results(main_key, artist, title, album, unique_results, "", mb_metadata)
+
             # Watchlist check
             top_result = unique_results[0]
             if top_result.get('queue_length', 0) > 0:
@@ -918,14 +1017,16 @@ def background_search_task(search_items: List[Dict]):
                 })
         else:
              search_state['errors'].append(f"No results for: {main_key}")
-             search_manager.add_track_results(main_key, artist, title, album, [], "")
+             # Still save MusicBrainz metadata even if no Slskd results
+             mb_metadata = item.get('musicbrainz_metadata')
+             search_manager.add_track_results(main_key, artist, title, album, [], "", mb_metadata)
 
         # Update progress
         search_state['progress'] += 1
         logger.info(f"[WORKER] ✓ Finished item: {item_id}. Progress: {search_state['progress']}/{search_state['total']}")
 
-    # Use ThreadPoolExecutor for concurrency (Reduced to 5 for stability)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    # Use ThreadPoolExecutor for concurrency (8 workers for optimal speed)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(process_item, item) for item in search_items]
         concurrent.futures.wait(futures)
 
@@ -1007,11 +1108,22 @@ def track_detail(track_key: str):
     if not track_data:
         return "Track not found", 404
 
+    # Limit results to top 20 for better UI performance
+    limited_track_data = track_data.copy()
+    limited_track_data['results'] = track_data.get('results', [])[:20]
+
+    # Check if ISRC is already downloaded (for duplicate warning)
+    musicbrainz_data = track_data.get('musicbrainz')
+    isrc = musicbrainz_data.get('isrc') if musicbrainz_data else None
+    is_duplicate = isrc_tracker.is_duplicate(isrc) if isrc else False
+
     return render_template(
         'track.html',
         track_key=track_key,
-        track_data=track_data,
-        slskd_url=CONFIG['SLSKD_URL']
+        track_data=limited_track_data,
+        slskd_url=CONFIG['SLSKD_URL'],
+        is_duplicate=is_duplicate,
+        musicbrainz_data=musicbrainz_data
     )
 
 
@@ -1204,25 +1316,95 @@ def export_csv():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/bulk_download', methods=['POST'])
-def bulk_download():
-    """Initiate downloads for multiple tracks"""
+@app.route('/download/<path:track_key>', methods=['POST'])
+def download_track(track_key: str):
+    """Download a single track with ISRC-based duplicate prevention"""
     try:
-        data = request.get_json()
-        track_keys = data.get('track_keys', [])
-        
-        if not track_keys:
-            return jsonify({'error': 'No tracks provided'}), 400
-        
+        # Get track results
+        track_data = search_manager.get_track_results(track_key)
+        if not track_data or not track_data.get('results'):
+            return jsonify({'error': 'No results found for track'}), 404
+
+        # Check for ISRC-based duplicates
+        musicbrainz_data = track_data.get('musicbrainz')
+        isrc = musicbrainz_data.get('isrc') if musicbrainz_data else None
+
+        if isrc and isrc_tracker.is_duplicate(isrc):
+            duplicate_info = isrc_tracker.get_duplicate_info(isrc)
+            return jsonify({
+                'error': 'duplicate',
+                'message': f'This track (ISRC: {isrc}) has already been downloaded',
+                'isrc': isrc,
+                'original_download': duplicate_info
+            }), 409  # 409 Conflict
+
+        # Get top result
+        top_result = track_data['results'][0]
+        username = top_result.get('username')
+        filename = top_result.get('filename')
+
+        if not username or not filename:
+            return jsonify({'error': 'Invalid result data'}), 400
+
         # Initialize Slskd client
         client = SlskdClient(
             host=CONFIG['SLSKD_URL'],
             api_key=CONFIG['SLSKD_API_KEY']
         )
-        
+
+        # Initiate download via Slskd API
+        download_response = client.download_file(username, filename)
+
+        if download_response:
+            # Record download with ISRC
+            isrc_tracker.record_download(
+                isrc=isrc,
+                artist=track_data.get('artist'),
+                title=track_data.get('title'),
+                album=track_data.get('album'),
+                username=username,
+                filename=filename,
+                size=top_result.get('size'),
+                bitrate=top_result.get('bitrate'),
+                musicbrainz_id=musicbrainz_data.get('musicbrainz_id') if musicbrainz_data else None
+            )
+
+            return jsonify({
+                'success': True,
+                'message': f'Download initiated: {filename}',
+                'filename': filename,
+                'username': username,
+                'isrc': isrc
+            })
+        else:
+            return jsonify({'error': 'Failed to initiate download'}), 500
+
+    except Exception as e:
+        logger.error(f"Download error for {track_key}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/bulk_download', methods=['POST'])
+def bulk_download():
+    """Initiate downloads for multiple tracks with ISRC-based duplicate prevention"""
+    try:
+        data = request.get_json()
+        track_keys = data.get('track_keys', [])
+
+        if not track_keys:
+            return jsonify({'error': 'No tracks provided'}), 400
+
+        # Initialize Slskd client
+        client = SlskdClient(
+            host=CONFIG['SLSKD_URL'],
+            api_key=CONFIG['SLSKD_API_KEY']
+        )
+
         downloaded = 0
         failed = 0
-        
+        duplicates = 0
+        duplicate_details = []
+
         for track_key in track_keys:
             try:
                 # Get track results
@@ -1231,39 +1413,69 @@ def bulk_download():
                     failed += 1
                     logger.warning(f"No results found for track: {track_key}")
                     continue
-                
+
+                # Check for ISRC-based duplicates
+                musicbrainz_data = track_data.get('musicbrainz')
+                isrc = musicbrainz_data.get('isrc') if musicbrainz_data else None
+
+                if isrc and isrc_tracker.is_duplicate(isrc):
+                    duplicates += 1
+                    duplicate_info = isrc_tracker.get_duplicate_info(isrc)
+                    duplicate_details.append({
+                        'track_key': track_key,
+                        'isrc': isrc,
+                        'original_download': duplicate_info
+                    })
+                    logger.warning(f"[DUPLICATE] Blocked download of {track_key} - ISRC {isrc} already downloaded")
+                    continue
+
                 # Get top result
                 top_result = track_data['results'][0]
                 username = top_result.get('username')
                 filename = top_result.get('filename')
-                
+
                 if not username or not filename:
                     failed += 1
                     logger.warning(f"Invalid result data for track: {track_key}")
                     continue
-                
+
                 # Initiate download via Slskd API
                 download_response = client.download_file(username, filename)
-                
+
                 if download_response:
                     downloaded += 1
                     logger.info(f"Initiated download: {filename} from {username}")
+
+                    # Record download with ISRC
+                    isrc_tracker.record_download(
+                        isrc=isrc,
+                        artist=track_data.get('artist'),
+                        title=track_data.get('title'),
+                        album=track_data.get('album'),
+                        username=username,
+                        filename=filename,
+                        size=top_result.get('size'),
+                        bitrate=top_result.get('bitrate'),
+                        musicbrainz_id=musicbrainz_data.get('musicbrainz_id') if musicbrainz_data else None
+                    )
                 else:
                     failed += 1
                     logger.error(f"Failed to download: {filename}")
-                    
+
             except Exception as e:
                 failed += 1
                 logger.error(f"Error downloading track {track_key}: {e}")
                 continue
-        
+
         return jsonify({
             'success': True,
             'downloaded': downloaded,
             'failed': failed,
+            'duplicates': duplicates,
+            'duplicate_details': duplicate_details,
             'total': len(track_keys)
         })
-        
+
     except Exception as e:
         logger.error(f"Bulk download error: {e}")
         return jsonify({'error': str(e)}), 500
