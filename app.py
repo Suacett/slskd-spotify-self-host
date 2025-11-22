@@ -41,6 +41,7 @@ DEFAULT_CONFIG = {
     'MAX_QUEUE_LENGTH': 50,
     'MIN_SPEED_KBS': 50,
     'TOP_RESULTS_COUNT': 5,
+    'MAX_FILE_SIZE_MB': 30,  # Maximum file size in MB
 }
 
 # Load configuration from file or environment
@@ -187,12 +188,25 @@ def passes_quality_filters(file_info: Dict) -> bool:
     - Queue length must be <= MAX_QUEUE_LENGTH
     - Speed must be >= MIN_SPEED_KBS
     - File must not be locked
+    - File must not be a video
+    - File size must be <= MAX_FILE_SIZE_MB
     """
     extension = file_info.get('extension', '').lower()
     bitrate = file_info.get('bitrate', 0)
     queue_length = file_info.get('queue_length', 0)
     speed_kbs = file_info.get('speed_kbs', 0)
     is_locked = file_info.get('is_locked', False)
+    file_size = file_info.get('size', 0)
+
+    # Reject video files
+    video_extensions = ['mkv', 'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mpg', 'mpeg', 'm4v']
+    if extension in video_extensions:
+        return False
+
+    # Reject files over size limit
+    max_size_bytes = CONFIG['MAX_FILE_SIZE_MB'] * 1024 * 1024
+    if file_size > max_size_bytes:
+        return False
 
     # Locked files are always rejected
     if is_locked:
@@ -917,7 +931,7 @@ def index():
     # Sort by search date (newest first)
     tracks.sort(key=lambda x: x['searched_at'], reverse=True)
 
-    return render_template('index.html', stats=stats, tracks=tracks, search_state=search_state)
+    return render_template('index.html', stats=stats, tracks=tracks, search_state=search_state, slskd_url=CONFIG['SLSKD_URL'])
 
 
 @app.route('/settings', methods=['GET', 'POST'])
