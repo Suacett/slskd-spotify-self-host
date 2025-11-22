@@ -242,7 +242,7 @@ class SearchManager:
 
     def __init__(self):
         self.results = self._load_results()
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()  # Use RLock to allow reentrant locking
 
     def _load_results(self) -> Dict:
         """Load existing search results from JSON file"""

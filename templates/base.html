@@ -158,17 +158,26 @@
             };
 
             const notification = document.createElement('div');
-            notification.className = `fixed top-4 right-4 ${colors[type]} text-white px-6 py-4 rounded-lg shadow-lg z-50 transition-opacity duration-300`;
-            notification.innerHTML = `
-                <div class="flex items-center">
-                    <span>${message}</span>
-                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                    </button>
-                </div>
+            notification.className = `fixed top-4 right-4 ${colors[type]} text-white px-6 py-4 rounded-lg shadow-lg z-50 animate-slide-in`;
+
+            const content = document.createElement('div');
+            content.className = 'flex items-center';
+
+            const messageSpan = document.createElement('span');
+            messageSpan.textContent = message; // Use textContent to prevent XSS
+
+            const closeButton = document.createElement('button');
+            closeButton.className = 'ml-4 text-white hover:text-gray-200';
+            closeButton.onclick = () => notification.remove();
+            closeButton.innerHTML = `
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
             `;
+
+            content.appendChild(messageSpan);
+            content.appendChild(closeButton);
+            notification.appendChild(content);
             document.body.appendChild(notification);
 
             setTimeout(() => {
