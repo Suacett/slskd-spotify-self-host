@@ -1063,3 +1063,19 @@ MIT License - see [LICENSE](LICENSE) file for details.
 No more scrolling through hundreds of low-quality results. Just the top 5 best files, automatically ranked by quality, speed, and availability.
 
 **Star this repo if you find it useful!** ⭐
+
+## How to Get Your Slskd API Key
+
+To connect this tool to your Soulseek client, you need an API Key.
+
+1. **Open Slskd**: Go to your Slskd Web UI (e.g., http://192.168.1.124:5030).
+2. **Go to Settings**: Click the Settings (Cog Icon) ⚙️ in the side menu.
+3. **Open Authentication**: Click on the Authentication tab.
+4. **Create a Key**:
+    - Scroll down to the API Keys section.
+    - Click the + (Plus) button to add a new key.
+    - **Name**: Enter `SpotifySearch` (or any name).
+    - **CIDR**: Enter `0.0.0.0/0` (this allows your local docker container to connect).
+    - **Role**: Select `Administrator` (required to manage downloads).
+5. **Copy the Key**: Click the Copy icon next to your new key.
+6. **Paste it**: Go back to the Spotify Search tool and paste it into the API Key field.

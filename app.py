@@ -343,7 +343,7 @@ class SlskdClient:
 
     def search(self, query, timeout=15):
         """Initiate a search"""
-        url = f"{self.base_url}/search"
+        url = f"{self.base_url}/searches"
         try:
             # Slskd expects search text in the body or query param? 
             # Based on docs/usage, usually POST to /search with {searchText: "..."}
@@ -367,7 +367,7 @@ class SlskdClient:
 
     def application_state(self):
         """Get application state"""
-        url = f"{self.base_url}/application/state"
+        url = f"{self.base_url}/application"
         try:
             response = requests.get(url, headers=self.headers, timeout=5)
             response.raise_for_status()
