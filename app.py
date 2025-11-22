@@ -125,6 +125,12 @@ def calculate_quality_score(file_info: Dict, requested_title: str = "") -> float
         clean_filename = Path(filename).stem.replace('_', ' ').replace('-', ' ').lower()
         clean_title = requested_title.lower()
         
+        # Negative Filtering (Blacklist)
+        blacklist = ['instrumental', 'karaoke', 'cover', 'live', 'remix', 'acapella']
+        for word in blacklist:
+            if word in clean_filename and word not in clean_title:
+                score -= 500  # Heavy penalty for unwanted versions
+                
         # Check for exact containment first
         if clean_title in clean_filename:
             score += 50
@@ -132,7 +138,7 @@ def calculate_quality_score(file_info: Dict, requested_title: str = "") -> float
         # Fuzzy match ratio
         matcher = difflib.SequenceMatcher(None, clean_title, clean_filename)
         ratio = matcher.ratio()
-        if ratio > 0.9:
+        if ratio > 0.85:  # Stricter threshold
             score += 100
         elif ratio > 0.7:
             score += 50
@@ -330,7 +336,7 @@ class SlskdClient:
         
         # Construct base URL carefully to avoid double slashes
         # If host has path, we need to be careful
-        self.base_url = f"{self.host}{self.url_base}api/v1"
+        self.base_url = f"{self.host}{self.url_base}api/v0"
         self.headers = {'X-API-Key': self.api_key}
         
         logger.info(f"SlskdClient initialized with Base URL: {self.base_url}")
@@ -643,8 +649,8 @@ def background_search_task(search_items: List[Dict]):
             display_name = q['display']
             search_state['current_item'] = display_name
             
-            # Jitter
-            time.sleep(0.5)
+            # Jitter (Reduced for performance)
+            time.sleep(0.1)
 
             # Check if already searched (skip only if we have results?)
             # For now, let's search all variants if not found
@@ -774,8 +780,8 @@ def background_search_task(search_items: List[Dict]):
         # Update progress
         search_state['progress'] += 1
 
-    # Use ThreadPoolExecutor for concurrency
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    # Use ThreadPoolExecutor for concurrency (Boosted to 20)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         futures = [executor.submit(process_item, item) for item in search_items]
         concurrent.futures.wait(futures)
 
