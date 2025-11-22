@@ -403,6 +403,7 @@
                 document.getElementById('progressSection').classList.remove('hidden');
                 document.getElementById('startSearchBtn').disabled = true;
                 startProgressPolling();
+                startAutoRefresh(); // Start auto-refreshing stats
                 showNotification(data.message, 'success');
             } else {
                 showNotification(data.error || data.message, 'info');
@@ -633,7 +634,20 @@
             const data = await response.json();
 
             if (data.success) {
-                showNotification(`Initiated downloads for ${data.downloaded} track(s). ${data.failed} failed.`, 'success');
+                let message = `Initiated downloads for ${data.downloaded} track(s).`;
+                if (data.failed > 0) {
+                    message += ` ${data.failed} failed.`;
+                }
+                if (data.duplicates > 0) {
+                    message += ` ${data.duplicates} duplicate(s) blocked.`;
+                }
+                showNotification(message, 'success');
+
+                // Show duplicate details if any
+                if (data.duplicate_details && data.duplicate_details.length > 0) {
+                    console.log('Duplicate downloads blocked:', data.duplicate_details);
+                }
+
                 // Uncheck all boxes
                 checkboxes.forEach(cb => cb.checked = false);
                 updateSelectedCount();
@@ -645,6 +659,63 @@
             showNotification('Failed to initiate downloads', 'error');
         }
     }
+
+    // Auto-refresh stats and table when search is active
+    let autoRefreshInterval = null;
+
+    function startAutoRefresh() {
+        if (autoRefreshInterval) return; // Already running
+
+        autoRefreshInterval = setInterval(async () => {
+            try {
+                // Check if search is active
+                const statusResponse = await fetch('/search/status');
+                const status = await statusResponse.json();
+
+                if (status.active) {
+                    // Refresh stats
+                    const statsResponse = await fetch('/api/stats');
+                    const stats = await statsResponse.json();
+
+                    // Update stat cards without page reload
+                    document.querySelector('.grid .bg-gray-800:nth-child(1) .text-3xl').textContent = stats.total_tracks;
+                    document.querySelector('.grid .bg-gray-800:nth-child(2) .text-3xl').textContent = stats.tracks_with_results;
+                    document.querySelector('.grid .bg-gray-800:nth-child(3) .text-3xl').textContent = stats.reviewed_tracks;
+                    document.querySelector('.grid .bg-gray-800:nth-child(4) .text-3xl').textContent = stats.total_files;
+                }
+
+                // If search completed, reload page to show new results
+                if (status.completed && !status.active) {
+                    stopAutoRefresh();
+                }
+            } catch (error) {
+                console.error('Auto-refresh error:', error);
+            }
+        }, 3000); // Refresh every 3 seconds
+    }
+
+    function stopAutoRefresh() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+        }
+    }
+
+    // Start auto-refresh on page load if search is active
+    window.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const response = await fetch('/search/status');
+            const status = await response.json();
+
+            if (status.active) {
+                document.getElementById('progressSection')?.classList.remove('hidden');
+                startProgressPolling();
+                startAutoRefresh();
+            }
+        } catch (error) {
+            console.error('Failed to check search status:', error);
+        }
+    });
 
 </script>
 {% endblock %}
