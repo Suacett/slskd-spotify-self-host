@@ -439,6 +439,16 @@ class SlskdClient:
             logger.error(f"Get state failed: {e}")
             raise
 
+    def download_file(self, username, filename):
+        """Initiate a file download"""
+        url = f"{self.base_url}/users/{username}/downloads"
+        try:
+            response = self._request_with_retry('POST', url, json={'filename': filename}, timeout=10)
+            return response.json()
+        except Exception as e:
+            logger.error(f"Download init failed for {filename} from {username}: {e}")
+            return None
+
 
 class WatchListManager:
     """Manages the watch list for busy users"""
@@ -1169,6 +1179,71 @@ def export_csv():
 
     except Exception as e:
         logger.error(f"Export error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/bulk_download', methods=['POST'])
+def bulk_download():
+    """Initiate downloads for multiple tracks"""
+    try:
+        data = request.get_json()
+        track_keys = data.get('track_keys', [])
+        
+        if not track_keys:
+            return jsonify({'error': 'No tracks provided'}), 400
+        
+        # Initialize Slskd client
+        client = SlskdClient(
+            host=CONFIG['SLSKD_URL'],
+            api_key=CONFIG['SLSKD_API_KEY']
+        )
+        
+        downloaded = 0
+        failed = 0
+        
+        for track_key in track_keys:
+            try:
+                # Get track results
+                track_data = search_manager.get_track_results(track_key)
+                if not track_data or not track_data.get('results'):
+                    failed += 1
+                    logger.warning(f"No results found for track: {track_key}")
+                    continue
+                
+                # Get top result
+                top_result = track_data['results'][0]
+                username = top_result.get('username')
+                filename = top_result.get('filename')
+                
+                if not username or not filename:
+                    failed += 1
+                    logger.warning(f"Invalid result data for track: {track_key}")
+                    continue
+                
+                # Initiate download via Slskd API
+                download_response = client.download_file(username, filename)
+                
+                if download_response:
+                    downloaded += 1
+                    logger.info(f"Initiated download: {filename} from {username}")
+                else:
+                    failed += 1
+                    logger.error(f"Failed to download: {filename}")
+                    
+            except Exception as e:
+                failed += 1
+                logger.error(f"Error downloading track {track_key}: {e}")
+                continue
+        
+        return jsonify({
+            'success': True,
+            'downloaded': downloaded,
+            'failed': failed,
+            'total': len(track_keys)
+        })
+        
+    except Exception as e:
+        logger.error(f"Bulk download error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
