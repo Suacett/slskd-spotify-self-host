@@ -1,721 +1,106 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Spotify to Slskd{% endblock %}
-
 {% block content %}
-<!-- Stats Dashboard -->
-<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
-        <div class="flex items-center justify-between">
-            <div>
-                <p class="text-gray-400 text-sm">Total Tracks</p>
-                <p class="text-3xl font-bold text-white">{{ stats.total_tracks }}</p>
-            </div>
-            <div class="bg-blue-500 p-3 rounded-full">
-                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
-                    </path>
-                </svg>
-            </div>
-        </div>
-    </div>
-
-    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
-        <div class="flex items-center justify-between">
-            <div>
-                <p class="text-gray-400 text-sm">With Results</p>
-                <p class="text-3xl font-bold text-white">{{ stats.tracks_with_results }}</p>
-            </div>
-            <div class="bg-green-500 p-3 rounded-full">
-                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-            </div>
-        </div>
-    </div>
-
-    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
-        <div class="flex items-center justify-between">
-            <div>
-                <p class="text-gray-400 text-sm">Reviewed</p>
-                <p class="text-3xl font-bold text-white">{{ stats.reviewed_tracks }}</p>
-            </div>
-            <div class="bg-purple-500 p-3 rounded-full">
-                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                </svg>
-            </div>
-        </div>
-    </div>
-
-    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
-        <div class="flex items-center justify-between">
-            <div>
-                <p class="text-gray-400 text-sm">Total Files</p>
-                <p class="text-3xl font-bold text-white">{{ stats.total_files }}</p>
-            </div>
-            <div class="bg-yellow-500 p-3 rounded-full">
-                <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3">
-                    </path>
-                </svg>
-            </div>
-        </div>
-    </div>
-</div>
-
-</div>
-
-<!-- Manual Search Section -->
-<div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-8">
-    <h2 class="text-2xl font-bold mb-4 text-white">Manual Search</h2>
-    <div class="flex gap-4">
-        <input type="text" id="manualSearchInput" placeholder="Enter Artist - Title (e.g. Daft Punk - One More Time)"
-            class="flex-1 bg-gray-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500">
-        <button onclick="startManualSearch()"
-            class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-all">
-            Search
-        </button>
-    </div>
-</div>
-
-<!-- Upload Section -->
-<div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg mb-8">
-    <h2 class="text-2xl font-bold mb-4 text-white">Upload Spotify CSV</h2>
-
-    <!-- Drop Zone -->
-    <div id="dropZone"
-        class="border-4 border-dashed border-gray-600 dark:border-gray-600 rounded-lg p-12 text-center cursor-pointer hover:border-purple-500 transition-colors">
-        <input type="file" id="fileInput" accept=".csv" class="hidden">
-        <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-        </svg>
-        <p class="text-xl text-gray-300 dark:text-gray-300 mb-2">Drop your Spotify CSV here or click to browse</p>
-        <p class="text-sm text-gray-400">Supports CSV files from Spotify playlist exports</p>
-    </div>
-
-    <!-- Upload Results -->
-    <div id="uploadResults" class="mt-4 hidden">
-        <div class="bg-gray-700 dark:bg-gray-700 rounded-lg p-4">
-            <p class="font-semibold text-white mb-2">Upload Summary:</p>
-            <div class="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                    <span class="text-gray-400">Total Artists:</span>
-                    <span class="text-white font-bold ml-2" id="totalArtists">0</span>
-                </div>
-                <div>
-                    <span class="text-gray-400">New:</span>
-                    <span class="text-green-400 font-bold ml-2" id="newArtists">0</span>
-                </div>
-                <div>
-                    <span class="text-gray-400">Already Searched:</span>
-                    <span class="text-yellow-400 font-bold ml-2" id="existingArtists">0</span>
-                </div>
-            </div>
-            <div class="mt-4">
-                <label class="block text-sm font-medium text-gray-300 mb-2">Search Mode</label>
-                <div class="flex space-x-4">
-                    <label class="inline-flex items-center">
-                        <input type="radio" name="searchMode" value="artist_title" checked
-                            class="form-radio text-purple-600">
-                        <span class="ml-2 text-white">Artist + Title (Best Precision)</span>
-                    </label>
-                    <label class="inline-flex items-center">
-                        <input type="radio" name="searchMode" value="artist_only" class="form-radio text-purple-600">
-                        <span class="ml-2 text-white">Artist Only (More Results)</span>
-                    </label>
-                    <label class="inline-flex items-center">
-                        <input type="radio" name="searchMode" value="album" class="form-radio text-purple-600">
-                        <span class="ml-2 text-white">Album (Best for Full Albums)</span>
-                    </label>
-                </div>
-            </div>
-
-            <button id="startSearchBtn" onclick="startSearch()"
-                class="mt-6 w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-extrabold text-lg py-4 px-8 rounded-xl hover:from-purple-500 hover:to-blue-500 transition-all transform hover:scale-[1.02] shadow-lg flex items-center justify-center group">
-                <svg class="w-8 h-8 mr-3 group-hover:animate-bounce" fill="none" stroke="currentColor"
-                    viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                </svg>
-                START SEARCH
+<div class="space-y-6">
+    <!-- Upload Section -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+        <h2 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Import Spotify Playlist</h2>
+        <form id="upload-form" class="flex items-center space-x-4">
+            <input type="file" name="file" accept=".csv"
+                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100">
+            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                Upload & Search
             </button>
-        </div>
+        </form>
     </div>
 
-    <!-- Progress Bar -->
-    <div id="progressSection" class="mt-4 hidden">
-        <div class="bg-gray-700 dark:bg-gray-700 rounded-lg p-4">
-            <div class="flex justify-between items-center mb-2">
-                <span class="font-semibold text-white flex items-center animate-pulse" id="progressText">
-                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg"
-                        fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
-                        </circle>
-                        <path class="opacity-75" fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                        </path>
-                    </svg>
-                    Searching...
-                </span>
-                <span class="text-gray-400" id="progressPercent">0%</span>
-            </div>
-            <div class="w-full bg-gray-600 rounded-full h-3 overflow-hidden">
-                <div id="progressBar" class="gradient-bg h-3 transition-all duration-300" style="width: 0%"></div>
-            </div>
-            <p class="text-sm text-gray-400 mt-2">Current: <span id="currentArtist"
-                    class="text-white font-mono">-</span></p>
-            <button onclick="cancelSearch()"
-                class="mt-3 w-full bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition">
-                Cancel Search
-            </button>
-        </div>
+    <!-- Results Container -->
+    <div id="albums-container" class="space-y-4">
+        <!-- Content loaded via JS -->
+        <div class="text-center text-gray-500 py-10">Loading data...</div>
     </div>
 </div>
 
-<!-- Artist List -->
-<div class="bg-gray-800 dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-    <div class="p-6 border-b border-gray-700">
-        <div class="flex justify-between items-center">
-            <h2 class="text-2xl font-bold text-white">Tracks</h2>
-            <div class="flex space-x-3">
-                <button onclick="filterArtists('all')"
-                    class="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition filter-btn"
-                    data-filter="all">All</button>
-                <button onclick="filterArtists('reviewed')"
-                    class="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition filter-btn"
-                    data-filter="reviewed">Reviewed</button>
-                <button onclick="filterArtists('unreviewed')"
-                    class="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition filter-btn"
-                    data-filter="unreviewed">Not Reviewed</button>
-                <a href="/export/csv"
-                    class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition inline-flex items-center">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
-                        </path>
-                    </svg>
-                    Export CSV
-                </a>
-                <button onclick="downloadSelected()" id="downloadSelectedBtn"
-                    class="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition inline-flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled>
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10">
-                        </path>
-                    </svg>
-                    Download Selected (<span id="selectedCount">0</span>)
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <div class="overflow-x-auto">
-        <table class="w-full">
-            <thead class="bg-gray-700 dark:bg-gray-700">
-                <tr>
-                    <th class="px-6 py-3 text-left">
-                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll()"
-                            class="form-checkbox h-5 w-5 text-purple-600 rounded">
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-600"
-                        onclick="sortTable('name')">
-                        Track Details ↕
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-600"
-                        onclick="sortTable('results')">
-                        Results ↕
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-600"
-                        onclick="sortTable('date')">
-                        Searched Date ↕
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                        Status
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                        Actions
-                    </th>
-                </tr>
-            </thead>
-            <tbody id="trackTableBody" class="bg-gray-800 dark:bg-gray-800 divide-y divide-gray-700">
-                {% for track in tracks %}
-                <tr class="hover:bg-gray-700 transition-all duration-200 hover:scale-[1.01] track-row animate-fade-in"
-                    style="animation-delay: {{ loop.index0 * 50 }}ms" data-reviewed="{{ track.reviewed|lower }}">
-                    <td class="px-6 py-4">
-                        <input type="checkbox" class="track-checkbox form-checkbox h-5 w-5 text-purple-600 rounded"
-                            value="{{ track.key }}" onchange="updateSelectedCount()">
-                    </td>
-                    <td class="px-6 py-4">
-                        <div>
-                            <a href="/track/{{ track.key|urlencode }}"
-                                class="text-blue-400 hover:text-blue-300 font-medium text-base">
-                                {{ track.title }}
-                            </a>
-                            <div class="text-sm text-gray-400 mt-1">{{ track.artist }}</div>
-                            {% if track.album %}
-                            <div class="text-xs text-gray-500 mt-1">Album: {{ track.album }}</div>
-                            {% endif %}
-                        </div>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <span
-                            class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {% if track.result_count > 0 %}bg-green-900 text-green-200{% else %}bg-red-900 text-red-200{% endif %}">
-                            {{ track.result_count }} files
-                        </span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                        {{ track.searched_at.split('T')[0] }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        {% if track.reviewed %}
-                        <span
-                            class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-900 text-purple-200">
-                            ✓ Reviewed
-                        </span>
-                        {% else %}
-                        <span
-                            class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-700 text-gray-300">
-                            Pending
-                        </span>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                        <a href="/track/{{ track.key|urlencode }}" class="text-blue-400 hover:text-blue-300">View</a>
-                        <a href="{{ slskd_url }}/search?q={{ (track.artist + ' ' + track.title)|urlencode }}"
-                            target="_blank" rel="noopener noreferrer" class="text-green-400 hover:text-green-300">Manual
-                            Search</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-    {% if tracks|length == 0 %}
-    <div class="p-12 text-center">
-        <svg class="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4">
-            </path>
-        </svg>
-        <p class="text-xl text-gray-400">No tracks searched yet</p>
-        <p class="text-sm text-gray-500 mt-2">Upload a CSV to get started</p>
-    </div>
-    {% endif %}
-</div>
-{% endblock %}
-
-{% block scripts %}
 <script>
-    let uploadedArtists = [];
+    function renderAlbums(data) {
+        const container = document.getElementById('albums-container');
+        if (!data.albums || Object.keys(data.albums).length === 0) {
+            container.innerHTML = '<div class="text-center text-gray-500 py-10">No results found. Upload a CSV to start.</div>';
+            return;
+        }
 
-    // File upload handling
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('fileInput');
+        let html = '';
+        for (const [albumKey, album] of Object.entries(data.albums)) {
+            html += `
+                <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                        <div class="flex items-center space-x-4">
+                            <div class="h-12 w-12 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center text-xl">
+                                💿
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-bold text-gray-900 dark:text-white">${album.title}</h3>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">${album.artist} • ${album.type}</p>
+                            </div>
+                        </div>
+                        <div class="text-sm text-gray-500">
+                            ${Object.keys(album.tracks).length} Tracks
+                        </div>
+                    </div>
+                    
+                    <div class="hidden bg-gray-50 dark:bg-gray-900 p-4">
+                        <div class="grid grid-cols-1 gap-2">
+                            ${Object.entries(album.tracks).map(([trackKey, track]) => `
+                                <div class="flex justify-between items-center p-3 bg-white dark:bg-gray-800 rounded shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                                    <div class="flex-1">
+                                        <div class="font-medium text-gray-900 dark:text-white">${track.title}</div>
+                                        <div class="text-xs text-gray-500">
+                                            ${track.result_count} results 
+                                            ${track.musicbrainz ? '<span class="text-green-500 ml-2">✓ MB Verified</span>' : ''}
+                                        </div>
+                                    </div>
+                                    <a href="/track/${encodeURIComponent(trackKey)}" class="ml-4 bg-blue-600 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded">
+                                        View Results
+                                    </a>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }
 
-    dropZone.addEventListener('click', () => fileInput.click());
+    function loadData() {
+        fetch('/api/data')
+            .then(response => response.json())
+            .then(data => renderAlbums(data))
+            .catch(err => console.error('Error loading data:', err));
+    }
 
-    dropZone.addEventListener('dragover', (e) => {
+    // Initial load
+    loadData();
+
+    // Poll every 5 seconds
+    setInterval(loadData, 5000);
+
+    // Upload Handler
+    document.getElementById('upload-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        dropZone.classList.add('border-purple-500');
-    });
-
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.classList.remove('border-purple-500');
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropZone.classList.remove('border-purple-500');
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            handleFileUpload(files[0]);
-        }
-    });
-
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            handleFileUpload(e.target.files[0]);
-        }
-    });
-
-    async function handleFileUpload(file) {
-        if (!file.name.toLowerCase().endsWith('.csv')) {
-            showNotification('Please upload a CSV file', 'error');
-            return;
-        }
-
-        const formData = new FormData();
-        formData.append('file', file);
-
+        const formData = new FormData(e.target);
         try {
-            const response = await fetch('/upload', {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
-
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
             if (data.success) {
-                uploadedArtists = data.artists;
-                document.getElementById('totalArtists').textContent = data.total_artists;
-                document.getElementById('newArtists').textContent = data.new_artists;
-                document.getElementById('existingArtists').textContent = data.existing_artists;
-                document.getElementById('uploadResults').classList.remove('hidden');
-
-                showNotification(`Parsed ${data.total_artists} artists from CSV`, 'success');
+                alert('Upload successful! Search started.');
+                loadData();
             } else {
-                showNotification(data.error || 'Upload failed', 'error');
+                alert('Error: ' + data.error);
             }
-        } catch (error) {
-            console.error('Upload error:', error);
-            showNotification('Upload failed: ' + error.message, 'error');
-        }
-    }
-
-    async function startSearch() {
-        if (uploadedArtists.length === 0) {
-            showNotification('No artists to search', 'error');
-            return;
-        }
-
-        try {
-            const searchMode = document.querySelector('input[name="searchMode"]:checked').value;
-
-            const response = await fetch('/search/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    artists: uploadedArtists,
-                    mode: searchMode
-                })
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                document.getElementById('progressSection').classList.remove('hidden');
-                document.getElementById('startSearchBtn').disabled = true;
-                startProgressPolling();
-                startAutoRefresh(); // Start auto-refreshing stats
-                showNotification(data.message, 'success');
-            } else {
-                showNotification(data.error || data.message, 'info');
-            }
-        } catch (error) {
-            console.error('Search start error:', error);
-            showNotification('Failed to start search: ' + error.message, 'error');
-        }
-    }
-
-    async function cancelSearch() {
-        try {
-            await fetch('/search/cancel', { method: 'POST' });
-            showNotification('Search cancelled', 'info');
-            stopProgressPolling();
-            document.getElementById('progressSection').classList.add('hidden');
-            document.getElementById('startSearchBtn').disabled = false;
-            document.getElementById('progressText').textContent = 'Cancelled';
-            document.getElementById('progressBar').style.width = '0%';
-        } catch (error) {
-            console.error('Cancel error:', error);
-        }
-    }
-
-    let progressInterval = null;
-
-    function startProgressPolling() {
-        if (progressInterval) clearInterval(progressInterval);
-
-        progressInterval = setInterval(async () => {
-            try {
-                const response = await fetch('/search/status');
-                const status = await response.json();
-
-                updateProgress(status);
-
-                if (status.completed) {
-                    stopProgressPolling();
-                    showNotification('Search completed!', 'success');
-                    setTimeout(() => location.reload(), 2000);
-                }
-            } catch (error) {
-                console.error('Progress poll error:', error);
-            }
-        }, 2000);
-    }
-
-    function stopProgressPolling() {
-        if (progressInterval) {
-            clearInterval(progressInterval);
-            progressInterval = null;
-        }
-    }
-
-    function updateProgress(status) {
-        const percent = status.total > 0 ? Math.round((status.progress / status.total) * 100) : 0;
-        document.getElementById('progressBar').style.width = percent + '%';
-        document.getElementById('progressPercent').textContent = percent + '%';
-        document.getElementById('progressText').textContent = `Searching ${status.progress + 1}/${status.total} artists...`;
-        document.getElementById('currentArtist').textContent = status.current_item || '-';
-    }
-
-    // Filter artists
-    function filterArtists(filter) {
-        const rows = document.querySelectorAll('.artist-row');
-        const buttons = document.querySelectorAll('.filter-btn');
-
-        // Update button styles
-        buttons.forEach(btn => {
-            if (btn.dataset.filter === filter) {
-                btn.classList.add('bg-purple-600');
-                btn.classList.remove('bg-gray-700');
-            } else {
-                btn.classList.remove('bg-purple-600');
-                btn.classList.add('bg-gray-700');
-            }
-        });
-
-        // Filter rows
-        rows.forEach(row => {
-            const isReviewed = row.dataset.reviewed === 'true';
-
-            if (filter === 'all') {
-                row.style.display = '';
-            } else if (filter === 'reviewed' && isReviewed) {
-                row.style.display = '';
-            } else if (filter === 'unreviewed' && !isReviewed) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
-        });
-    }
-
-    // Sort table
-    let sortOrder = { name: 1, results: 1, date: 1 };
-
-    function sortTable(column) {
-        const tbody = document.getElementById('artistTableBody');
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-
-        rows.sort((a, b) => {
-            let aVal, bVal;
-
-            if (column === 'name') {
-                aVal = a.cells[0].textContent.trim();
-                bVal = b.cells[0].textContent.trim();
-                return sortOrder.name * aVal.localeCompare(bVal);
-            } else if (column === 'results') {
-                aVal = parseInt(a.cells[1].textContent);
-                bVal = parseInt(b.cells[1].textContent);
-                return sortOrder.results * (aVal - bVal);
-            } else if (column === 'date') {
-                aVal = a.cells[2].textContent.trim();
-                bVal = b.cells[2].textContent.trim();
-                return sortOrder.date * aVal.localeCompare(bVal);
-            }
-        });
-
-        sortOrder[column] *= -1;
-
-        rows.forEach(row => tbody.appendChild(row));
-    }
-
-    // Check for active search on load
-    window.addEventListener('DOMContentLoaded', async () => {
-        try {
-            const response = await fetch('/search/status');
-            const status = await response.json();
-
-            if (status.active) {
-                document.getElementById('progressSection').classList.remove('hidden');
-                startProgressPolling();
-            }
-        } catch (error) {
-            console.error('Status check error:', error);
+        } catch (err) {
+            alert('Upload failed');
         }
     });
-
-    async function startManualSearch() {
-        const query = document.getElementById('manualSearchInput').value.trim();
-        if (!query) {
-            showNotification('Please enter a search query', 'error');
-            return;
-        }
-
-        // Parse query into artist/title if possible
-        let artist = query;
-        let title = '';
-
-        if (query.includes('-')) {
-            const parts = query.split('-');
-            artist = parts[0].trim();
-            title = parts.slice(1).join('-').trim();
-        }
-
-        const searchItem = { artist: artist, title: title };
-
-        // Determine mode based on input
-        const mode = title ? 'artist_title' : 'artist_only';
-
-        try {
-            const response = await fetch('/search/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ artists: [searchItem], force: true, mode: mode })
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                document.getElementById('progressSection').classList.remove('hidden');
-                startProgressPolling();
-                showNotification('Started search for ' + query, 'success');
-                document.getElementById('manualSearchInput').value = '';
-            } else {
-                showNotification(data.error || data.message, 'info');
-            }
-        } catch (error) {
-            console.error('Search error:', error);
-            showNotification('Failed to start search', 'error');
-        }
-    }
-
-    // Bulk selection functions
-    function toggleSelectAll() {
-        const selectAll = document.getElementById('selectAll');
-        const checkboxes = document.querySelectorAll('.track-checkbox');
-        checkboxes.forEach(cb => {
-            cb.checked = selectAll.checked;
-        });
-        updateSelectedCount();
-    }
-
-    function updateSelectedCount() {
-        const checkboxes = document.querySelectorAll('.track-checkbox:checked');
-        const count = checkboxes.length;
-        document.getElementById('selectedCount').textContent = count;
-        document.getElementById('downloadSelectedBtn').disabled = count === 0;
-
-        // Update selectAll checkbox state
-        const allCheckboxes = document.querySelectorAll('.track-checkbox');
-        const selectAll = document.getElementById('selectAll');
-        selectAll.checked = count === allCheckboxes.length && count > 0;
-        selectAll.indeterminate = count > 0 && count < allCheckboxes.length;
-    }
-
-    async function downloadSelected() {
-        const checkboxes = document.querySelectorAll('.track-checkbox:checked');
-        const trackKeys = Array.from(checkboxes).map(cb => cb.value);
-
-        if (trackKeys.length === 0) {
-            showNotification('No tracks selected', 'error');
-            return;
-        }
-
-        if (!confirm(`Download top result for ${trackKeys.length} selected track(s)?`)) {
-            return;
-        }
-
-        try {
-            const response = await fetch('/bulk_download', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ track_keys: trackKeys })
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                let message = `Initiated downloads for ${data.downloaded} track(s).`;
-                if (data.failed > 0) {
-                    message += ` ${data.failed} failed.`;
-                }
-                if (data.duplicates > 0) {
-                    message += ` ${data.duplicates} duplicate(s) blocked.`;
-                }
-                showNotification(message, 'success');
-
-                // Show duplicate details if any
-                if (data.duplicate_details && data.duplicate_details.length > 0) {
-                    console.log('Duplicate downloads blocked:', data.duplicate_details);
-                }
-
-                // Uncheck all boxes
-                checkboxes.forEach(cb => cb.checked = false);
-                updateSelectedCount();
-            } else {
-                showNotification(data.error || 'Download failed', 'error');
-            }
-        } catch (error) {
-            console.error('Bulk download error:', error);
-            showNotification('Failed to initiate downloads', 'error');
-        }
-    }
-
-    // Auto-refresh stats and table when search is active
-    let autoRefreshInterval = null;
-
-    function startAutoRefresh() {
-        if (autoRefreshInterval) return; // Already running
-
-        autoRefreshInterval = setInterval(async () => {
-            try {
-                // Check if search is active
-                const statusResponse = await fetch('/search/status');
-                const status = await statusResponse.json();
-
-                if (status.active) {
-                    // Refresh stats
-                    const statsResponse = await fetch('/api/stats');
-                    const stats = await statsResponse.json();
-
-                    // Update stat cards without page reload
-                    document.querySelector('.grid .bg-gray-800:nth-child(1) .text-3xl').textContent = stats.total_tracks;
-                    document.querySelector('.grid .bg-gray-800:nth-child(2) .text-3xl').textContent = stats.tracks_with_results;
-                    document.querySelector('.grid .bg-gray-800:nth-child(3) .text-3xl').textContent = stats.reviewed_tracks;
-                    document.querySelector('.grid .bg-gray-800:nth-child(4) .text-3xl').textContent = stats.total_files;
-                }
-
-                // If search completed, reload page to show new results
-                if (status.completed && !status.active) {
-                    stopAutoRefresh();
-                }
-            } catch (error) {
-                console.error('Auto-refresh error:', error);
-            }
-        }, 3000); // Refresh every 3 seconds
-    }
-
-    function stopAutoRefresh() {
-        if (autoRefreshInterval) {
-            clearInterval(autoRefreshInterval);
-            autoRefreshInterval = null;
-        }
-    }
-
-    // Start auto-refresh on page load if search is active
-    window.addEventListener('DOMContentLoaded', async () => {
-        try {
-            const response = await fetch('/search/status');
-            const status = await response.json();
-
-            if (status.active) {
-                document.getElementById('progressSection')?.classList.remove('hidden');
-                startProgressPolling();
-                startAutoRefresh();
-            }
-        } catch (error) {
-            console.error('Failed to check search status:', error);
-        }
-    });
-
 </script>
 {% endblock %}
