@@ -813,7 +813,7 @@ def background_search_task(search_items: List[Dict]):
                         main_key = f"{artist} - {title}" if title else artist
                         
                         # We need to merge with existing if any
-                        existing = search_manager.get_artist_results(main_key)
+                        existing = search_manager.get_track_results(main_key)
                         if existing:
                             # Merge logic could be complex. 
                             # For now, let's just add them.
@@ -999,7 +999,7 @@ def upload_file():
         
         for item in artists:
             key = f"{item.get('artist', '')} - {item.get('title', '')}" if item.get('title') else item.get('artist', '')
-            if search_manager.get_artist_results(key):
+            if search_manager.get_track_results(key):
                 existing_items.append(item)
             else:
                 new_items.append(item)
@@ -1046,7 +1046,7 @@ def start_search():
             filtered_artists = []
             for a in artists:
                 key = f"{a.get('artist', '')} - {a.get('title', '')}" if a.get('title') else a.get('artist', '')
-                if not search_manager.get_artist_results(key):
+                if not search_manager.get_track_results(key):
                     filtered_artists.append(a)
             artists = filtered_artists
 
