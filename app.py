@@ -350,6 +350,10 @@ class SlskdClient:
         max_retries = 3
         backoff = 1
         
+        # Set default timeout if not provided
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 30
+        
         for i in range(max_retries + 1):
             try:
                 response = self.session.request(method, url, **kwargs)
@@ -645,7 +649,7 @@ def background_search_task(search_items: List[Dict]):
             return
 
         item_id = f"{item.get('artist', '')} - {item.get('title', '')}"
-        logger.debug(f"Processing item: {item_id}")
+        logger.info(f"[WORKER] Processing item: {item_id}")
 
         artist_str = item.get('artist', '')
         title = item.get('title', '')
@@ -713,13 +717,13 @@ def background_search_task(search_items: List[Dict]):
                 search_id = search_response.get('id')
                 
                 if search_id:
-                    logger.debug(f"Search initiated for {q['query']}, ID: {search_id}. Waiting {CONFIG['SEARCH_DELAY']}s...")
+                    logger.info(f"[WORKER] Search ID {search_id} for '{q['query']}'. Waiting {CONFIG['SEARCH_DELAY']}s...")
                     time.sleep(CONFIG['SEARCH_DELAY'])
                     
-                    logger.debug(f"Fetching results for {search_id}...")
+                    logger.info(f"[WORKER] Fetching results for ID {search_id}...")
                     results_response = client.get_search_results(search_id)
                     files = results_response.get('files', [])
-                    logger.debug(f"Got {len(files)} files for {search_id}")
+                    logger.info(f"[WORKER] Got {len(files)} raw files for '{q['query']}'")
                     
                     # Process results (similar to search_single_item)
                     all_results = []
@@ -783,7 +787,9 @@ def background_search_task(search_items: List[Dict]):
                     logger.error(f"No search ID for {q['query']}")
                     
             except Exception as e:
-                logger.error(f"Error searching {q['query']}: {e}")
+                logger.error(f"[WORKER] Error searching {q['query']}: {e}")
+                import traceback
+                logger.error(f"[WORKER] Traceback: {traceback.format_exc()}")
 
         # After all queries for this item, save results
         main_key = f"{artist} - {title}" if title else artist
@@ -822,7 +828,7 @@ def background_search_task(search_items: List[Dict]):
 
         # Update progress
         search_state['progress'] += 1
-        logger.debug(f"Finished processing item: {item_id}. Progress: {search_state['progress']}/{search_state['total']}")
+        logger.info(f"[WORKER] ✓ Finished item: {item_id}. Progress: {search_state['progress']}/{search_state['total']}")
 
     # Use ThreadPoolExecutor for concurrency (Reduced to 5 for stability)
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
