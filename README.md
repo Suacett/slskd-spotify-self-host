@@ -1,387 +1,926 @@
 # Spotify to Slskd Search Aggregator
 
-A self-hosted web application that helps you discover music on Slskd based on your Spotify favorites. This tool searches for your liked artists on Slskd and provides a browsing interface for manual review and download selection.
+**Smart music discovery powered by intelligent quality filtering**
 
-**🎵 Important**: This tool does NOT auto-download anything. It aggregates search results for you to manually review and select in the Slskd interface.
+A self-hosted web application that automatically searches Slskd for your Spotify favorite artists and shows you only the **highest-quality, most available files**. No more scrolling through hundreds of results – see only the top 5 best options per artist.
 
----
-
-## Features
-
-- 📊 **CSV Upload**: Upload Spotify playlist exports (CSV format)
-- 🔍 **Automated Search**: Background search process for all unique artists
-- 💾 **Persistent Storage**: Search results saved in JSON format
-- 🎨 **Modern UI**: Clean, responsive interface with dark mode support
-- 🔧 **Advanced Filtering**: Filter by quality (FLAC, 320kbps+), size, filename
-- ✅ **Review Tracking**: Mark artists as reviewed to track progress
-- 📈 **Statistics Dashboard**: Track total artists, results, and review status
-- 🐳 **Docker Ready**: Easy deployment with Docker or Docker Compose
-- 🔐 **Secure**: Non-root user, proper API key handling, health checks
+[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Python](https://img.shields.io/badge/python-3.9+-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/flask-%23000.svg?style=for-the-badge&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
 
 ---
 
-## Table of Contents
+## 🎵 What Makes This Special
 
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Deployment Options](#deployment-options)
-  - [Option 1: Standalone Docker](#option-1-standalone-docker)
-  - [Option 2: Integration with Existing Media Stack](#option-2-integration-with-existing-media-stack)
-  - [Option 3: LXC Container](#option-3-lxc-container)
-- [Usage Guide](#usage-guide)
-- [API Endpoints](#api-endpoints)
-- [Troubleshooting](#troubleshooting)
-- [Development](#development)
-- [License](#license)
+**Smart Quality Filtering** automatically ranks every search result by:
+- 🎧 **Audio Quality** - FLAC/lossless files prioritized, then 320kbps, 256kbps, etc.
+- ⚡ **Availability** - Files with no queue get instant priority
+- 🚀 **Speed** - Fast upload speeds ranked higher
+- 🎯 **Top 5 Only** - See just the best results, not hundreds of options
+
+**NO credentials hardcoded** - Configure everything through the web interface. Safe, secure, and easy.
 
 ---
 
-## Prerequisites
+## ✨ Features
 
-### Required
+### Smart Features
+- 🧠 **Intelligent Quality Scoring** - Automatic ranking by bitrate, speed, queue length
+- 🎯 **Top Results Only** - Shows top 5 best files per artist (configurable)
+- ⚡ **Instant Download Priority** - Files with no queue appear first
+- 🔒 **Automatic Filtering** - Rejects low bitrate, locked files, slow sources
 
-- **Slskd instance** running and accessible on your network
-  - URL: `http://192.168.1.124:5030` (or your instance URL)
-  - API key configured in Slskd settings
-- **Docker** and **Docker Compose** (for Docker deployment)
-  - OR **Proxmox with LXC** capability (for LXC deployment)
-- **Network access** from deployment location to Slskd instance
+### Core Features
+- 📊 **CSV Upload** - Upload Spotify playlist exports
+- 🔍 **Background Search** - Non-blocking artist searches
+- 💾 **Persistent Storage** - Results saved to JSON
+- 🎨 **Modern Dark UI** - Responsive Tailwind CSS interface
+- ⚙️ **Web Configuration** - No file editing required
+- ✅ **Progress Tracking** - Mark artists as reviewed
+- 📈 **Statistics Dashboard** - Track searches and results
+- 📤 **Export Options** - CSV export and JSON backup
 
-### Recommended
-
-- Desktop browser for accessing the web interface
-- Spotify CSV export of your playlists or liked songs
+### Security & Deployment
+- 🐳 **Docker Ready** - One-command installation
+- 🔐 **Secure** - No hardcoded credentials, non-root container
+- 🏥 **Health Checks** - Monitor application status
+- 🔄 **Easy Updates** - Pull and rebuild
 
 ---
 
-## Quick Start
+## 📋 Table of Contents
 
-### 1. Clone the Repository
+- [Quick Start](#-quick-start)
+- [Installation Methods](#-installation-methods)
+  - [Method 1: Docker Compose (Recommended)](#method-1-docker-compose-recommended)
+  - [Method 2: Standalone Docker](#method-2-standalone-docker)
+  - [Method 3: Proxmox LXC](#method-3-proxmox-lxc)
+- [Configuration](#-configuration)
+- [Usage Guide](#-usage-guide)
+- [Smart Quality Filtering](#-smart-quality-filtering)
+- [Troubleshooting](#-troubleshooting)
+- [API Reference](#-api-reference)
+- [Development](#-development)
+
+---
+
+## 🚀 Quick Start
+
+Get running in **under 5 minutes**:
 
 ```bash
-git clone <repository-url>
+# 1. Clone the repository
+git clone https://github.com/yourusername/slskd-spotify-self-host.git
+cd slskd-spotify-self-host
+
+# 2. Run the installer
+chmod +x install.sh
+./install.sh
+
+# 3. Access the web interface
+# Open http://localhost:5070 in your browser
+
+# 4. Configure your Slskd connection
+# Go to Settings → Enter API key → Save
+
+# 5. Upload your Spotify CSV and start searching!
+```
+
+That's it! The installer handles everything else.
+
+---
+
+## 📦 Installation Methods
+
+### Prerequisites
+
+**Required:**
+- Slskd instance running with API access
+- Docker and Docker Compose **OR** Proxmox with LXC
+- Network connectivity between this app and Slskd
+
+**Optional:**
+- Spotify account (to export playlists)
+
+---
+
+### Method 1: Docker Compose (Recommended)
+
+**Best for:** Most users, easiest setup, automatic updates
+
+#### Step 1: Get the Files
+
+```bash
+git clone https://github.com/yourusername/slskd-spotify-self-host.git
 cd slskd-spotify-self-host
 ```
 
-### 2. Configure API Key
-
-First, you need to set up an API key in your Slskd instance:
-
-1. Access your Slskd web interface at `http://192.168.1.124:5030`
-2. Go to Settings → API
-3. Generate a new API key or use an existing one
-4. Copy the API key
-
-Then, create a `.env` file from the example:
+#### Step 2: Create Environment File
 
 ```bash
 cp .env.example .env
+nano .env  # or use your preferred editor
 ```
 
-Edit `.env` and add your API key:
-
+Add your Slskd API key:
 ```env
-SLSKD_API_KEY=your_actual_api_key_here
+SLSKD_URL=http://192.168.1.124:5030
+SLSKD_API_KEY=your_api_key_here
+SLSKD_URL_BASE=/
 ```
 
-### 3. Build and Run
+#### Step 3: Start the Application
 
 ```bash
 docker-compose up -d
 ```
 
-### 4. Access the Interface
+#### Step 4: Access the Interface
 
-Open your browser and navigate to:
-
+Open your browser:
 ```
-http://192.168.1.124:5070
+http://localhost:5070
 ```
 
-(Or use your server's IP address if different)
+Or from another device on your network:
+```
+http://YOUR_SERVER_IP:5070
+```
+
+#### Common Commands
+
+```bash
+# View logs
+docker-compose logs -f
+
+# Stop the application
+docker-compose down
+
+# Restart after changes
+docker-compose restart
+
+# Update to latest version
+git pull
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
+
+# Check status
+docker-compose ps
+
+# View resource usage
+docker stats spotify-slskd-search
+```
 
 ---
 
-## Configuration
+### Method 2: Standalone Docker
 
-All configuration is done through environment variables. See `.env.example` for all options:
+**Best for:** Single container deployment, custom networks
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SLSKD_URL` | `http://192.168.1.124:5030` | Your Slskd instance URL |
-| `SLSKD_API_KEY` | *(required)* | Your Slskd API key |
-| `SLSKD_URL_BASE` | `/` | Slskd API base path |
-| `SEARCH_TIMEOUT` | `15` | Search timeout in seconds |
-| `SEARCH_DELAY` | `3` | Delay between searches in seconds |
-| `DATA_DIR` | `/app/data` | Data directory path (inside container) |
-| `FLASK_ENV` | `production` | Flask environment |
+#### Step 1: Build the Image
+
+```bash
+git clone https://github.com/yourusername/slskd-spotify-self-host.git
+cd slskd-spotify-self-host
+
+docker build -t spotify-slskd-search .
+```
+
+#### Step 2: Create Data Directory
+
+```bash
+mkdir -p ./data
+chmod 777 ./data
+```
+
+#### Step 3: Run the Container
+
+```bash
+docker run -d \
+  --name spotify-slskd-search \
+  --restart unless-stopped \
+  -p 5070:5000 \
+  -v $(pwd)/data:/app/data \
+  -e SLSKD_URL=http://192.168.1.124:5030 \
+  -e SLSKD_API_KEY=your_api_key_here \
+  -e SLSKD_URL_BASE=/ \
+  -e SEARCH_TIMEOUT=15 \
+  -e SEARCH_DELAY=3 \
+  spotify-slskd-search
+```
+
+#### Step 4: Verify It's Running
+
+```bash
+docker logs spotify-slskd-search
+```
+
+You should see:
+```
+Spotify to Slskd Search Aggregator with Smart Quality
+Slskd URL: http://192.168.1.124:5030
+...
+```
+
+#### Management Commands
+
+```bash
+# Stop container
+docker stop spotify-slskd-search
+
+# Start container
+docker start spotify-slskd-search
+
+# View logs
+docker logs -f spotify-slskd-search
+
+# Remove container
+docker rm -f spotify-slskd-search
+
+# Update
+docker pull spotify-slskd-search:latest
+docker stop spotify-slskd-search
+docker rm spotify-slskd-search
+# Then run the docker run command again
+```
+
+---
+
+### Method 3: Proxmox LXC
+
+**Best for:** Proxmox users, resource efficiency, isolation
+
+I've created a complete installation script for Proxmox LXC deployment.
+
+#### Automatic Installation Script
+
+Save this as `proxmox-install.sh` on your Proxmox host:
+
+```bash
+#!/bin/bash
+# Proxmox LXC Installation Script for Spotify to Slskd Search Aggregator
+
+set -e
+
+echo "======================================================="
+echo "  Spotify to Slskd Search Aggregator"
+echo "  Proxmox LXC Installation"
+echo "======================================================="
+echo ""
+
+# Configuration
+CT_ID=121  # Change this if you want a different container ID
+CT_HOSTNAME="spotify-slskd-search"
+CT_PASSWORD="changeme"  # Change this!
+CT_STORAGE="local-lvm"  # Your Proxmox storage
+CT_MEMORY=1024  # 1GB RAM
+CT_SWAP=512
+CT_DISK=5  # 5GB disk
+CT_CORES=2
+BRIDGE="vmbr0"  # Your network bridge
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo -e "${BLUE}Creating LXC container...${NC}"
+
+# Download Ubuntu 22.04 template if not exists
+if ! pveam list local | grep -q ubuntu-22.04; then
+    echo "Downloading Ubuntu 22.04 template..."
+    pveam download local ubuntu-22.04-standard_22.04-1_amd64.tar.zst
+fi
+
+# Create container
+pct create $CT_ID local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst \
+    --hostname $CT_HOSTNAME \
+    --password $CT_PASSWORD \
+    --storage $CT_STORAGE \
+    --memory $CT_MEMORY \
+    --swap $CT_SWAP \
+    --cores $CT_CORES \
+    --net0 name=eth0,bridge=$BRIDGE,ip=dhcp \
+    --rootfs $CT_STORAGE:$CT_DISK \
+    --unprivileged 1 \
+    --features nesting=1 \
+    --onboot 1
+
+echo -e "${GREEN}✓${NC} Container created with ID: $CT_ID"
+
+# Start container
+pct start $CT_ID
+sleep 5
+
+echo -e "${BLUE}Installing dependencies...${NC}"
+
+# Install Python and dependencies
+pct exec $CT_ID -- bash -c "
+    apt update
+    apt install -y python3 python3-pip git curl
+    pip3 install --upgrade pip
+"
+
+echo -e "${GREEN}✓${NC} Dependencies installed"
+
+# Clone repository
+echo -e "${BLUE}Cloning repository...${NC}"
+pct exec $CT_ID -- bash -c "
+    cd /opt
+    git clone https://github.com/yourusername/slskd-spotify-self-host.git
+    cd slskd-spotify-self-host
+    pip3 install -r requirements.txt
+"
+
+echo -e "${GREEN}✓${NC} Repository cloned and dependencies installed"
+
+# Create configuration
+echo -e "${BLUE}Creating configuration...${NC}"
+pct exec $CT_ID -- bash -c "
+    cd /opt/slskd-spotify-self-host
+    cp .env.example .env
+    mkdir -p /opt/slskd-spotify-self-host/data
+"
+
+# Create systemd service
+echo -e "${BLUE}Creating systemd service...${NC}"
+pct exec $CT_ID -- bash -c "cat > /etc/systemd/system/spotify-slskd-search.service << 'EOF'
+[Unit]
+Description=Spotify to Slskd Search Aggregator
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/slskd-spotify-self-host
+Environment=\"PATH=/usr/bin\"
+EnvironmentFile=/opt/slskd-spotify-self-host/.env
+ExecStart=/usr/bin/python3 /opt/slskd-spotify-self-host/app.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+"
+
+# Enable and start service
+pct exec $CT_ID -- bash -c "
+    systemctl daemon-reload
+    systemctl enable spotify-slskd-search
+    systemctl start spotify-slskd-search
+"
+
+echo -e "${GREEN}✓${NC} Service created and started"
+
+# Get container IP
+CT_IP=$(pct exec $CT_ID -- hostname -I | awk '{print $1}')
+
+echo ""
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}  Installation Complete!${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo -e "${BLUE}Container Details:${NC}"
+echo "  ID: $CT_ID"
+echo "  Hostname: $CT_HOSTNAME"
+echo "  IP Address: $CT_IP"
+echo "  Password: $CT_PASSWORD"
+echo ""
+echo -e "${BLUE}Access the application:${NC}"
+echo "  http://$CT_IP:5000"
+echo ""
+echo -e "${BLUE}Next steps:${NC}"
+echo "  1. Access the web interface"
+echo "  2. Go to Settings"
+echo "  3. Enter your Slskd API key"
+echo "  4. Configure quality filters"
+echo "  5. Start searching!"
+echo ""
+echo -e "${BLUE}Configuration:${NC}"
+echo "  Edit: pct exec $CT_ID -- nano /opt/slskd-spotify-self-host/.env"
+echo "  Logs: pct exec $CT_ID -- journalctl -u spotify-slskd-search -f"
+echo "  Restart: pct exec $CT_ID -- systemctl restart spotify-slskd-search"
+echo ""
+echo -e "${YELLOW}IMPORTANT: Change the container password!${NC}"
+echo "  pct set $CT_ID --password"
+echo ""
+```
+
+#### Run the Installation
+
+On your Proxmox host:
+
+```bash
+chmod +x proxmox-install.sh
+./proxmox-install.sh
+```
+
+The script will:
+1. Create Ubuntu 22.04 LXC container
+2. Install Python and dependencies
+3. Clone the repository
+4. Set up systemd service
+5. Start the application
+
+#### Manual LXC Installation
+
+If you prefer manual installation:
+
+**Step 1: Create LXC Container**
+
+In Proxmox web interface:
+- Create → CT → Ubuntu 22.04
+- CT ID: 121 (or your choice)
+- Hostname: spotify-slskd-search
+- Memory: 1024 MB
+- Disk: 5 GB
+- Network: Bridge, DHCP
+
+**Step 2: Install Dependencies**
+
+```bash
+pct enter 121
+
+apt update
+apt install -y python3 python3-pip git
+```
+
+**Step 3: Clone and Setup**
+
+```bash
+cd /opt
+git clone https://github.com/yourusername/slskd-spotify-self-host.git
+cd slskd-spotify-self-host
+
+pip3 install -r requirements.txt
+
+cp .env.example .env
+nano .env  # Add your API key
+```
+
+**Step 4: Create Systemd Service**
+
+```bash
+nano /etc/systemd/system/spotify-slskd-search.service
+```
+
+Paste:
+```ini
+[Unit]
+Description=Spotify to Slskd Search Aggregator
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/slskd-spotify-self-host
+Environment="PATH=/usr/bin"
+EnvironmentFile=/opt/slskd-spotify-self-host/.env
+ExecStart=/usr/bin/python3 /opt/slskd-spotify-self-host/app.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Step 5: Enable and Start**
+
+```bash
+systemctl daemon-reload
+systemctl enable spotify-slskd-search
+systemctl start spotify-slskd-search
+systemctl status spotify-slskd-search
+```
+
+**Step 6: Access the Application**
+
+Get your container IP:
+```bash
+hostname -I
+```
+
+Open browser:
+```
+http://CONTAINER_IP:5000
+```
+
+---
+
+## ⚙️ Configuration
+
+### Web-Based Configuration (Recommended)
+
+**No file editing needed!**
+
+1. Open the web interface
+2. Click **Settings** in the navigation
+3. Configure:
+   - **Slskd URL** (e.g., `http://192.168.1.124:5030`)
+   - **API Key** (from Slskd Settings → API Keys)
+   - **Quality Filters** (bitrate, queue, speed)
+   - **Search Settings** (timeout, delay)
+4. Click **Save Settings**
+
+Settings are saved to `data/config.json` and persist across restarts.
+
+### Environment Variables (Alternative)
+
+Edit `.env` file:
+
+```env
+# Slskd Connection
+SLSKD_URL=http://192.168.1.124:5030
+SLSKD_API_KEY=your_api_key_here
+SLSKD_USERNAME=  # Optional
+SLSKD_PASSWORD=  # Optional
+SLSKD_URL_BASE=/
+
+# Search Settings
+SEARCH_TIMEOUT=15  # seconds
+SEARCH_DELAY=3     # seconds between searches
+
+# Data Storage
+DATA_DIR=/app/data
+
+# Flask Settings
+FLASK_ENV=production
+SECRET_KEY=your_random_secret_key
+```
 
 ### Getting Your Slskd API Key
 
-1. Open Slskd web interface
-2. Navigate to **Settings** → **API Keys**
-3. Click **Generate New Key** or copy an existing key
-4. Add it to your `.env` file
+1. Open Slskd web interface (e.g., `http://192.168.1.124:5030`)
+2. Go to **Settings** → **API Keys**
+3. Click **Generate New Key**
+4. Copy the key
+5. Paste into web configuration or `.env` file
 
 ---
 
-## Deployment Options
+## 📖 Usage Guide
 
-### Option 1: Standalone Docker
+### Complete Workflow
 
-Best for: Simple, isolated deployment
+#### 1. Export Spotify Playlist
 
-1. **Clone and configure**:
+**Option A: Using Exportify** (Recommended)
+1. Go to [https://exportify.net/](https://exportify.net/)
+2. Click "Get Started"
+3. Log in with Spotify
+4. Select playlist
+5. Click "Export" → Download CSV
+
+**Option B: Spotify Data Download**
+1. Go to Spotify Account page
+2. Request your data
+3. Wait for email (2-30 days)
+4. Download ZIP
+5. Extract and find playlist CSVs
+
+#### 2. Upload CSV
+
+1. Open web interface
+2. Drag & drop CSV file into upload area
+3. Review artist count summary
+4. Click **Start Search**
+
+#### 3. Monitor Progress
+
+- Watch the progress bar
+- See current artist being searched
+- View any errors in real-time
+- Navigate away if needed (search continues in background)
+
+#### 4. Browse Results
+
+**Dashboard View:**
+- See all searched artists
+- Filter by review status (All, Reviewed, Not Reviewed)
+- Sort by name, results count, or date
+- View total statistics
+
+**Artist Detail View:**
+- See top 5 quality-ranked results
+- Each result shows:
+  - Quality badge (FLAC/320kbps/etc.)
+  - Quality score
+  - Instant start indicator (if available)
+  - File size, queue length, speed
+  - Username
+- Click "Open in Slskd" to download
+
+#### 5. Download Files
+
+1. Click **Open in Slskd** button
+2. Slskd opens in new tab
+3. Manually download the file in Slskd
+4. Return to this app
+5. Mark artist as **Reviewed** when done
+
+---
+
+## 🧠 Smart Quality Filtering
+
+### How It Works
+
+Every search result is automatically scored and ranked:
+
+**Quality Score = Bitrate Points + Speed Points + Queue Points**
+
+### Scoring Breakdown
+
+**Bitrate/Format (0-100 points):**
+- FLAC/WAV/ALAC/APE: **100 points** (lossless)
+- 320 kbps: **90 points**
+- 256 kbps: **70 points**
+- 192 kbps: **50 points**
+- Below 192 kbps: **20 points** (usually filtered out)
+
+**Upload Speed (0-50 points):**
+- 2+ MB/s: **50 points**
+- 1-2 MB/s: **40 points**
+- 500 KB/s - 1 MB/s: **30 points**
+- 100-500 KB/s: **20 points**
+- 50-100 KB/s: **10 points**
+- Below 50 KB/s: **0 points** (filtered out)
+
+**Queue Length (-100 to +50 points):**
+- No queue: **+50 bonus**
+- 1-5 slots: **-10 points**
+- 6-10 slots: **-30 points**
+- 11-25 slots: **-50 points**
+- 26+ slots: **-100 points**
+
+**Free Slot Bonus:**
+- Has free upload slot: **+25 points**
+
+### Strict Filters
+
+Files are excluded if they:
+- ❌ Have bitrate < 192 kbps (unless lossless)
+- ❌ Have queue length > 50 slots
+- ❌ Have upload speed < 50 KB/s
+- ❌ Are locked
+- ❌ Are from banned users
+
+### Customization
+
+Adjust in **Settings** page:
+
+```
+Minimum Bitrate: 192 kbps (default)
+  - Lower to 128 for more results
+  - Raise to 256 for higher quality only
+
+Maximum Queue: 50 slots (default)
+  - Lower to 25 for faster availability
+  - Raise to 100 if willing to wait
+
+Minimum Speed: 50 KB/s (default)
+  - Lower to 25 for slower connections
+  - Raise to 100 for faster downloads
+
+Top Results Count: 5 (default)
+  - Lower to 3 for fewer options
+  - Raise to 10 for more choices
+```
+
+### Example Results
+
+**Before Smart Filtering:**
+```
+Artist: Polyphia
+Results: 247 files (many duplicates, varying quality, long queues)
+```
+
+**After Smart Filtering:**
+```
+#1 Polyphia - Playing God.flac (Score: 175.0) ⚡ INSTANT
+   FLAC | 45.2 MB | No Queue | 2.5 MB/s | User: FastSharer
+
+#2 Polyphia - Playing God.mp3 (Score: 140.0) ⚡ INSTANT
+   320 kbps | 12.3 MB | No Queue | 1.8 MB/s | User: MusicLover
+
+#3 Polyphia - Playing God.mp3 (Score: 110.0)
+   320 kbps | 12.1 MB | Queue: 3 | 1.1 MB/s | User: SpeedDemon
+
+#4 Polyphia - Playing God.flac (Score: 95.0)
+   FLAC | 44.8 MB | Queue: 5 | 850 KB/s | User: HighQuality
+
+#5 Polyphia - Playing God.mp3 (Score: 75.0)
+   256 kbps | 10.2 MB | Queue: 8 | 500 KB/s | User: SlowAndSteady
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### Cannot Access Web Interface
+
+**Check container is running:**
+```bash
+# Docker Compose
+docker-compose ps
+
+# Docker
+docker ps | grep spotify-slskd-search
+
+# LXC
+pct status 121
+```
+
+**Check logs:**
+```bash
+# Docker Compose
+docker-compose logs
+
+# Docker
+docker logs spotify-slskd-search
+
+# LXC
+pct exec 121 -- journalctl -u spotify-slskd-search -f
+```
+
+**Verify port:**
+```bash
+# Should show port 5070 listening
+netstat -tlnp | grep 5070
+
+# Or
+ss -tlnp | grep 5070
+```
+
+### Cannot Connect to Slskd
+
+**Symptoms:**
+- Health check fails
+- "Cannot connect" errors
+- No search results
+
+**Solutions:**
+
+1. **Test connectivity:**
    ```bash
-   git clone <repository-url>
-   cd slskd-spotify-self-host
-   cp .env.example .env
-   # Edit .env with your API key
+   curl http://192.168.1.124:5030
    ```
 
-2. **Build and run**:
+2. **Verify API key:**
+   - Go to Settings
+   - Re-enter API key
+   - Save
+
+3. **Check Slskd is running:**
    ```bash
+   # Check Slskd container/service status
+   docker ps | grep slskd
+   ```
+
+4. **Network issues:**
+   - Ensure both containers on same network
+   - Check firewall rules
+   - Verify IP address is correct
+
+### No Search Results
+
+**Causes:**
+- Slskd not connected to Soulseek network
+- Quality filters too strict
+- API timeout too short
+- Artists don't exist on network
+
+**Solutions:**
+
+1. **Check Slskd connection:**
+   - Open Slskd web interface
+   - Verify connected to network
+   - Check search works in Slskd directly
+
+2. **Relax quality filters:**
+   - Go to Settings
+   - Lower minimum bitrate to 128
+   - Increase max queue to 100
+   - Lower minimum speed to 25
+   - Save and re-search
+
+3. **Increase timeout:**
+   - Go to Settings
+   - Set search timeout to 30 seconds
+   - Save
+
+4. **Check logs:**
+   ```bash
+   docker-compose logs -f
+   ```
+
+### Search Hangs or Slow
+
+**Symptoms:**
+- Progress bar stuck
+- Very slow searches
+- Timeouts
+
+**Solutions:**
+
+1. **Reduce batch size:**
+   - Search fewer artists at once
+   - Split large CSVs
+
+2. **Increase delays:**
+   - Go to Settings
+   - Set search delay to 5 seconds
+   - Reduces API load
+
+3. **Check resources:**
+   ```bash
+   docker stats spotify-slskd-search
+   ```
+   - If memory/CPU high, increase container limits
+
+### Port Already in Use
+
+**Error:** `Bind for 0.0.0.0:5070 failed: port is already allocated`
+
+**Solution:**
+
+Edit `docker-compose.yml`:
+```yaml
+ports:
+  - "5071:5000"  # Change 5070 to any free port
+```
+
+Restart:
+```bash
+docker-compose down
+docker-compose up -d
+```
+
+### Permission Errors
+
+**Symptoms:**
+- Cannot write to data directory
+- "Permission denied" errors
+
+**Solutions:**
+
+```bash
+# Fix permissions
+sudo chown -R 1000:1000 ./data
+sudo chmod -R 755 ./data
+
+# Restart container
+docker-compose restart
+```
+
+### Container Keeps Restarting
+
+**Check logs for errors:**
+```bash
+docker logs spotify-slskd-search --tail 100
+```
+
+**Common causes:**
+- Missing environment variables
+- Invalid configuration
+- Port conflict
+- Dependency issues
+
+**Solutions:**
+
+1. **Verify .env file exists:**
+   ```bash
+   ls -la .env
+   ```
+
+2. **Check all variables set:**
+   ```bash
+   cat .env
+   ```
+
+3. **Rebuild container:**
+   ```bash
+   docker-compose down
+   docker-compose build --no-cache
    docker-compose up -d
    ```
 
-3. **Access**:
-   - Web UI: `http://192.168.1.124:5070`
-   - Health check: `http://192.168.1.124:5070/health`
-
-4. **View logs**:
-   ```bash
-   docker logs -f spotify-slskd-search
-   ```
-
-5. **Stop**:
-   ```bash
-   docker-compose down
-   ```
-
-### Option 2: Integration with Existing Media Stack
-
-Best for: Integration with existing mediaapps container (CT120)
-
-1. **Prepare the build context**:
-   ```bash
-   # Clone to a persistent location
-   git clone <repository-url> /opt/spotify-slskd-search
-   cd /opt/spotify-slskd-search
-   cp .env.example .env
-   # Edit .env with your API key
-   ```
-
-2. **Update your main docker-compose.yml**:
-
-   Add the service from `docker-compose.mediaapps.yml` to your `/opt/media/docker-compose.yml`:
-
-   ```yaml
-   services:
-     # ... your existing services ...
-
-     spotify-slskd-search:
-       build: /opt/spotify-slskd-search
-       container_name: spotify-slskd-search
-       restart: unless-stopped
-       ports:
-         - "5070:5000"
-       environment:
-         - SLSKD_URL=http://192.168.1.124:5030
-         - SLSKD_API_KEY=${SLSKD_API_KEY}
-         - SLSKD_URL_BASE=/
-         - SEARCH_TIMEOUT=15
-         - SEARCH_DELAY=3
-         - DATA_DIR=/app/data
-         - FLASK_ENV=production
-       volumes:
-         - /opt/media/spotify-slskd-data:/app/data
-       networks:
-         - media_net
-   ```
-
-3. **Create data directory**:
-   ```bash
-   mkdir -p /opt/media/spotify-slskd-data
-   ```
-
-4. **Add API key to environment**:
-   ```bash
-   # Add to /opt/media/.env
-   echo "SLSKD_API_KEY=your_api_key_here" >> /opt/media/.env
-   ```
-
-5. **Start the service**:
-   ```bash
-   cd /opt/media
-   docker-compose up -d spotify-slskd-search
-   ```
-
-### Option 3: LXC Container
-
-Best for: Dedicated container, no Docker
-
-1. **Create LXC container**:
-   - OS: Ubuntu 22.04 or Debian 11
-   - RAM: 512MB minimum, 1GB recommended
-   - Disk: 5GB
-   - Network: Bridge to same network as Slskd (192.168.1.x)
-
-2. **Install dependencies**:
-   ```bash
-   apt update
-   apt install -y python3 python3-pip git
-   ```
-
-3. **Clone and setup**:
-   ```bash
-   cd /opt
-   git clone <repository-url> spotify-slskd-search
-   cd spotify-slskd-search
-   pip3 install -r requirements.txt
-   ```
-
-4. **Configure**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your settings
-   nano .env
-   ```
-
-5. **Create systemd service**:
-
-   Create `/etc/systemd/system/spotify-slskd-search.service`:
-
-   ```ini
-   [Unit]
-   Description=Spotify to Slskd Search Aggregator
-   After=network.target
-
-   [Service]
-   Type=simple
-   User=root
-   WorkingDirectory=/opt/spotify-slskd-search
-   Environment="PATH=/usr/bin"
-   EnvironmentFile=/opt/spotify-slskd-search/.env
-   ExecStart=/usr/bin/python3 /opt/spotify-slskd-search/app.py
-   Restart=always
-   RestartSec=10
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-6. **Enable and start**:
-   ```bash
-   systemctl daemon-reload
-   systemctl enable spotify-slskd-search
-   systemctl start spotify-slskd-search
-   ```
-
-7. **Check status**:
-   ```bash
-   systemctl status spotify-slskd-search
-   journalctl -u spotify-slskd-search -f
-   ```
-
 ---
 
-## Usage Guide
+## 📡 API Reference
 
-### 1. Prepare Your Spotify Export
-
-#### Option A: Spotify CSV Export
-
-1. Use a tool like [Exportify](https://exportify.net/) to export your playlists
-2. Or use Spotify's data download feature
-3. Ensure the CSV has columns: `Artist`, `Track`, `Album`
-
-#### Option B: Manual Artist List
-
-Create a simple text file with one artist per line:
-
-```
-Ado
-Dazbee
-NiziU
-Polyphia
-Chon
-```
-
-Then format it as CSV:
-
-```csv
-Artist
-Ado
-Dazbee
-NiziU
-Polyphia
-Chon
-```
-
-### 2. Upload and Search
-
-1. **Access the web interface**: `http://192.168.1.124:5070`
-
-2. **Upload CSV**:
-   - Click the upload area or drag & drop your CSV file
-   - Review the summary (total artists, new vs. already searched)
-
-3. **Start Search**:
-   - Click "Start Search" button
-   - Monitor progress with the progress bar
-   - Search runs in background—you can navigate away
-
-4. **Wait for Completion**:
-   - The interface will show progress
-   - You'll see a notification when complete
-
-### 3. Browse Results
-
-1. **Dashboard View**:
-   - See statistics (total artists, results, reviewed count)
-   - View all searched artists in a table
-   - Filter by review status (All, Reviewed, Not Reviewed)
-   - Sort by name, results count, or date
-
-2. **Artist Detail View**:
-   - Click on any artist to see their results
-   - Use quality filters (FLAC only, 320kbps+)
-   - Sort by size or quality
-   - Search within filenames
-
-3. **Download Files**:
-   - Click "Open in Slskd" next to any file
-   - This opens your Slskd interface in a new tab
-   - Manually download the file from Slskd
-
-4. **Track Progress**:
-   - Mark artists as "Reviewed" after checking them
-   - This helps you track what you've already browsed
-
-### 4. Re-search Artists
-
-If you want to refresh results for an artist:
-
-1. Go to the artist detail page
-2. Click "Re-search" button
-3. Confirm the deletion
-4. Upload CSV again or manually trigger search
-
-### 5. Export Results
-
-- **CSV Export**: Click "Export CSV" in the navigation to download all results
-- **Backup**: Click "Backup" to download the raw JSON file
-
----
-
-## API Endpoints
-
-The application provides a REST API:
+### Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/` | Main dashboard |
+| GET | `/settings` | Configuration page |
+| POST | `/settings` | Save configuration |
 | GET | `/artist/<name>` | Artist detail page |
 | POST | `/upload` | Upload CSV file |
 | POST | `/search/start` | Start background search |
@@ -394,350 +933,133 @@ The application provides a REST API:
 | GET | `/backup/download` | Download JSON backup |
 | GET | `/health` | Health check endpoint |
 
----
+### Example API Usage
 
-## Troubleshooting
+**Start a search:**
+```bash
+curl -X POST http://localhost:5070/search/start \
+  -H "Content-Type: application/json" \
+  -d '{"artists": ["Polyphia", "Chon", "Ado"]}'
+```
 
-### Cannot Connect to Slskd
+**Check search status:**
+```bash
+curl http://localhost:5070/search/status
+```
 
-**Symptoms**: Health check fails, searches return no results
+**Get statistics:**
+```bash
+curl http://localhost:5070/api/stats
+```
 
-**Solutions**:
-1. Verify Slskd is running: `curl http://192.168.1.124:5030`
-2. Check API key is correct in `.env`
-3. Verify network connectivity from container to Slskd
-4. Check Slskd logs for API errors
-5. Ensure Slskd API is enabled in settings
-
-### Port Already in Use
-
-**Symptoms**: Container fails to start with port conflict
-
-**Solutions**:
-1. Change port in `docker-compose.yml`:
-   ```yaml
-   ports:
-     - "5071:5000"  # Change 5070 to any available port
-   ```
-2. Restart: `docker-compose up -d`
-
-### No Results for Searches
-
-**Symptoms**: All searches return 0 results
-
-**Solutions**:
-1. Check Slskd is connected to the Soulseek network
-2. Verify search timeout isn't too short (increase in `.env`)
-3. Check Slskd search functionality directly
-4. Review application logs: `docker logs spotify-slskd-search`
-
-### Container Keeps Restarting
-
-**Symptoms**: Container status shows constant restarts
-
-**Solutions**:
-1. Check logs: `docker logs spotify-slskd-search`
-2. Verify `.env` file exists and is properly formatted
-3. Ensure `SLSKD_API_KEY` is set
-4. Check file permissions on data directory
-5. Verify Python dependencies installed correctly
-
-### Upload Fails
-
-**Symptoms**: CSV upload returns error
-
-**Solutions**:
-1. Verify file is valid CSV format
-2. Check file size (max 50MB)
-3. Ensure file has `Artist` column
-4. Try with a smaller test CSV first
-5. Check container logs for detailed error
-
-### Search Hangs or Crashes
-
-**Symptoms**: Search starts but never completes
-
-**Solutions**:
-1. Reduce `SEARCH_DELAY` if too many artists
-2. Check Slskd API rate limits
-3. Monitor memory usage: `docker stats spotify-slskd-search`
-4. Cancel and restart search
-5. Search smaller batches of artists
-
-### Permission Errors
-
-**Symptoms**: Cannot write to data directory
-
-**Solutions**:
-1. Fix volume permissions:
-   ```bash
-   sudo chown -R 1000:1000 ./data
-   ```
-2. Restart container: `docker-compose restart`
-
-### Dark Mode Not Working
-
-**Symptoms**: Theme doesn't persist
-
-**Solutions**:
-1. Clear browser cache
-2. Check browser localStorage is enabled
-3. Try different browser
-
----
-
-## Data Structure
-
-### Search Results JSON Format
-
-```json
-{
-  "last_updated": "2025-11-19T10:30:00",
-  "artists": {
-    "Ado": {
-      "searched_at": "2025-11-19T10:25:00",
-      "result_count": 42,
-      "reviewed": false,
-      "search_id": "abc123",
-      "results": [
-        {
-          "username": "musiclover42",
-          "filename": "Ado - うっせぇわ (Usseewa).flac",
-          "size": 35651584,
-          "bitrate": 0,
-          "extension": "flac"
-        },
-        {
-          "username": "jpopfan",
-          "filename": "Ado - 踊 (Odo).mp3",
-          "size": 8421376,
-          "bitrate": 320,
-          "extension": "mp3"
-        }
-      ]
-    }
-  }
-}
+**Health check:**
+```bash
+curl http://localhost:5070/health
 ```
 
 ---
 
-## Development
+## 🛠️ Development
 
 ### Local Development Setup
 
-1. **Clone repository**:
-   ```bash
-   git clone <repository-url>
-   cd slskd-spotify-self-host
-   ```
+```bash
+# Clone repository
+git clone https://github.com/yourusername/slskd-spotify-self-host.git
+cd slskd-spotify-self-host
 
-2. **Create virtual environment**:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   # or
-   venv\Scripts\activate  # Windows
-   ```
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # Linux/Mac
+# or
+venv\Scripts\activate  # Windows
 
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+# Install dependencies
+pip install -r requirements.txt
 
-4. **Configure environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your settings
-   ```
+# Create configuration
+cp .env.example .env
+nano .env  # Add your settings
 
-5. **Run development server**:
-   ```bash
-   export FLASK_ENV=development
-   python app.py
-   ```
+# Run development server
+export FLASK_ENV=development
+python app.py
+```
 
-6. **Access**: `http://localhost:5000`
+Access at `http://localhost:5000`
 
 ### Project Structure
 
 ```
 slskd-spotify-self-host/
-├── app.py                          # Main Flask application
+├── app.py                       # Main Flask application
 ├── templates/
-│   ├── base.html                   # Base template
-│   ├── index.html                  # Dashboard page
-│   └── artist.html                 # Artist detail page
-├── static/                         # Static files (if needed)
-├── data/                           # Data directory (created at runtime)
-│   ├── search_results.json         # Search results storage
-│   ├── uploads/                    # Uploaded CSV files
-│   └── application.log             # Application logs
-├── requirements.txt                # Python dependencies
-├── Dockerfile                      # Docker image definition
-├── docker-compose.yml              # Docker Compose config
-├── docker-compose.mediaapps.yml    # Media stack integration config
-├── .env.example                    # Environment variables template
-├── .dockerignore                   # Docker build exclusions
-└── README.md                       # This file
+│   ├── base.html               # Base template
+│   ├── index.html              # Dashboard
+│   ├── artist.html             # Artist detail page
+│   └── settings.html           # Configuration page
+├── static/                     # Static files (if any)
+├── data/                       # Data directory
+│   ├── search_results.json    # Search results
+│   ├── config.json            # User configuration
+│   ├── uploads/               # Uploaded CSV files
+│   └── application.log        # Application logs
+├── requirements.txt            # Python dependencies
+├── Dockerfile                  # Docker image
+├── docker-compose.yml          # Docker Compose config
+├── install.sh                  # Installation script
+├── .env.example                # Environment template
+├── README.md                   # This file
+├── QUICKSTART.md               # Quick start guide
+├── CHANGELOG.md                # Version history
+└── LICENSE                     # MIT license
 ```
 
 ### Technology Stack
 
-- **Backend**: Python 3.9, Flask 3.0
-- **Slskd Integration**: slskd-api 0.3.0
-- **Frontend**: HTML5, Tailwind CSS 3.x (CDN), Vanilla JavaScript
-- **Storage**: JSON file-based
-- **Deployment**: Docker, Docker Compose
+- **Backend:** Python 3.9, Flask 3.0
+- **API Client:** slskd-api 0.3.0
+- **Frontend:** HTML5, Tailwind CSS 3.x, Vanilla JavaScript
+- **Storage:** JSON file-based
+- **Deployment:** Docker, Docker Compose
 
 ---
 
-## Security Considerations
+## 📄 License
 
-- ✅ Non-root user in Docker container
-- ✅ API key via environment variables (not hardcoded)
-- ✅ Input validation and sanitization
-- ✅ No auto-download functionality (manual review required)
-- ✅ CSRF protection on state-changing operations
-- ✅ Secure headers on HTTP responses
-- ✅ No sensitive data in logs
-- ⚠️ Designed for internal network use (add reverse proxy with auth for external access)
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-## Performance Tips
-
-1. **Large CSV files**: Consider splitting into batches
-2. **Many artists**: Increase `SEARCH_DELAY` to avoid rate limiting
-3. **Slow searches**: Increase `SEARCH_TIMEOUT` for better results
-4. **Memory usage**: Monitor with `docker stats`, increase limits if needed
-5. **Network latency**: Ensure good connection between container and Slskd
-
----
-
-## Backup and Recovery
-
-### Backup Data
-
-```bash
-# Copy the entire data directory
-cp -r ./data ./data-backup-$(date +%Y%m%d)
-
-# Or download via web interface
-curl -O http://192.168.1.124:5070/backup/download
-```
-
-### Restore Data
-
-```bash
-# Stop container
-docker-compose down
-
-# Restore data directory
-cp -r ./data-backup-20251119 ./data
-
-# Restart container
-docker-compose up -d
-```
-
----
-
-## Updating
-
-### Update to Latest Version
-
-```bash
-# Pull latest code
-git pull origin main
-
-# Rebuild container
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-Your data in `./data` will persist across updates.
-
----
-
-## FAQ
-
-**Q: Does this automatically download music?**
-A: No! This tool only aggregates search results. You manually review and download in Slskd.
-
-**Q: Can I use this with multiple Slskd instances?**
-A: Currently supports one instance, but you can run multiple containers with different configs.
-
-**Q: What Spotify export formats are supported?**
-A: CSV files with at least an "Artist" column. Works with Exportify and Spotify data downloads.
-
-**Q: Can I search for specific albums or tracks?**
-A: Currently only searches by artist name. Track/album search coming in future versions.
-
-**Q: How long do searches take?**
-A: Depends on number of artists and `SEARCH_DELAY`. Roughly 3-5 seconds per artist.
-
-**Q: Can I cancel a search in progress?**
-A: Yes, click the "Cancel Search" button in the progress section.
-
-**Q: Are results updated automatically?**
-A: No, you need to delete and re-search artists to refresh results.
-
-**Q: Can I access this from outside my network?**
-A: Yes, but add authentication (reverse proxy with basic auth recommended).
-
-**Q: Does this work with VPN?**
-A: Yes, as long as the container can reach Slskd on your network.
-
----
-
-## Contributing
-
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
----
-
-## License
-
-MIT License - see LICENSE file for details
-
----
-
-## Credits
+## 🙏 Credits
 
 - Built with [Flask](https://flask.palletsprojects.com/)
-- Uses [slskd-api](https://pypi.org/project/slskd-api/) for Slskd integration
-- UI styled with [Tailwind CSS](https://tailwindcss.com/)
+- Uses [slskd-api](https://pypi.org/project/slskd-api/)
+- Styled with [Tailwind CSS](https://tailwindcss.com/)
 - Designed for [Slskd](https://github.com/slskd/slskd)
 
 ---
 
-## Support
+## 📞 Support
 
-For issues, questions, or feature requests:
-- Open an issue on GitHub
-- Check the troubleshooting section above
-- Review application logs for detailed errors
-
----
-
-## Version History
-
-### v1.0.0 (2025-11-19)
-- Initial release
-- CSV upload and parsing
-- Background search functionality
-- Web UI with filtering and sorting
-- Docker and LXC deployment options
-- Dark mode support
-- Export and backup features
+- 📖 [Quick Start Guide](QUICKSTART.md)
+- 📝 [Changelog](CHANGELOG.md)
+- 🐛 [Report Issues](https://github.com/yourusername/slskd-spotify-self-host/issues)
+- 💬 [Discussions](https://github.com/yourusername/slskd-spotify-self-host/discussions)
 
 ---
 
-**Made with ❤️ for manual music discovery**
+## 🎯 Quick Links
+
+- [Docker Hub](https://hub.docker.com/) - Get Docker
+- [Slskd Documentation](https://github.com/slskd/slskd) - Learn about Slskd
+- [Exportify](https://exportify.net/) - Export Spotify playlists
+- [Proxmox](https://www.proxmox.com/) - Proxmox VE
+
+---
+
+**Made with ❤️ for smart music discovery**
+
+No more scrolling through hundreds of low-quality results. Just the top 5 best files, automatically ranked by quality, speed, and availability.
+
+**Star this repo if you find it useful!** ⭐
