@@ -259,7 +259,7 @@ class SearchManager:
         """Create empty results structure"""
         return {
             'last_updated': None,
-            'artists': {}
+            'tracks': {}  # Changed from 'artists' to 'tracks'
         }
 
     def save_results(self):
@@ -273,30 +273,44 @@ class SearchManager:
             except Exception as e:
                 logger.error(f"Error saving results: {e}")
 
-    def get_artist_results(self, artist_name: str) -> Optional[Dict]:
-        """Get results for a specific artist"""
-        return self.results['artists'].get(artist_name)
+    def get_track_results(self, track_key: str) -> Optional[Dict]:
+        """Get results for a specific track"""
+        # Support legacy 'artists' key for backward compatibility
+        if 'tracks' in self.results:
+            return self.results['tracks'].get(track_key)
+        elif 'artists' in self.results:
+            # Legacy support
+            return self.results['artists'].get(track_key)
+        return None
 
-    def mark_reviewed(self, artist_name: str) -> bool:
-        """Mark an artist as reviewed"""
-        if artist_name in self.results['artists']:
-            self.results['artists'][artist_name]['reviewed'] = True
+    def mark_reviewed(self, track_key: str) -> bool:
+        """Mark a track as reviewed"""
+        tracks = self.results.get('tracks', {})
+        if track_key in tracks:
+            tracks[track_key]['reviewed'] = True
             self.save_results()
             return True
         return False
 
-    def delete_artist(self, artist_name: str) -> bool:
-        """Delete an artist's results"""
-        if artist_name in self.results['artists']:
-            del self.results['artists'][artist_name]
+    def delete_track(self, track_key: str) -> bool:
+        """Delete a track's results"""
+        tracks = self.results.get('tracks', {})
+        if track_key in tracks:
+            del tracks[track_key]
             self.save_results()
             return True
         return False
 
-    def add_artist_results(self, artist_name: str, results: List[Dict], search_id: str = ""):
-        """Add or update results for an artist"""
+    def add_track_results(self, track_key: str, artist: str, title: str, album: str, results: List[Dict], search_id: str = ""):
+        """Add or update results for a track"""
         with self.lock:
-            self.results['artists'][artist_name] = {
+            if 'tracks' not in self.results:
+                self.results['tracks'] = {}
+            
+            self.results['tracks'][track_key] = {
+                'artist': artist,
+                'title': title,
+                'album': album,
                 'searched_at': datetime.now().isoformat(),
                 'result_count': len(results),
                 'reviewed': False,
@@ -307,15 +321,16 @@ class SearchManager:
 
     def get_stats(self) -> Dict:
         """Calculate statistics"""
-        total_artists = len(self.results['artists'])
-        artists_with_results = sum(1 for a in self.results['artists'].values() if a['result_count'] > 0)
-        reviewed_artists = sum(1 for a in self.results['artists'].values() if a.get('reviewed', False))
-        total_files = sum(a['result_count'] for a in self.results['artists'].values())
+        tracks = self.results.get('tracks', {})
+        total_tracks = len(tracks)
+        tracks_with_results = sum(1 for t in tracks.values() if t['result_count'] > 0)
+        reviewed_tracks = sum(1 for t in tracks.values() if t.get('reviewed', False))
+        total_files = sum(t['result_count'] for t in tracks.values())
 
         return {
-            'total_artists': total_artists,
-            'artists_with_results': artists_with_results,
-            'reviewed_artists': reviewed_artists,
+            'total_tracks': total_tracks,
+            'tracks_with_results': tracks_with_results,
+            'reviewed_tracks': reviewed_tracks,
             'total_files': total_files,
             'last_updated': self.results.get('last_updated')
         }
@@ -481,8 +496,8 @@ romanizer = Romanizer()
 
 
 def parse_spotify_csv(file_path: Path) -> List[Dict]:
-    """Parse Spotify CSV and extract artist and track names"""
-    artists = []
+    """Parse CSV and extract artist, track, and album names"""
+    tracks = []
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -503,31 +518,46 @@ def parse_spotify_csv(file_path: Path) -> List[Dict]:
         for row in reader:
             artist = None
             title = None
+            album = None
             
-            # Extract Artist
-            for col_name in ['Artist', 'artist', 'Artist Name', 'ARTIST']:
+            # Extract Artist (case-insensitive)
+            for col_name in ['artist', 'Artist', 'Artist Name', 'ARTIST']:
                 if col_name in row and row[col_name]:
                     artist = row[col_name].strip()
                     break
             
-            # Extract Title
-            for col_name in ['Track Name', 'Track', 'Title', 'Song', 'Name']:
+            # Extract Title (case-insensitive)
+            for col_name in ['title', 'Title', 'Track Name', 'Track', 'Song', 'Name']:
                 if col_name in row and row[col_name]:
                     title = row[col_name].strip()
+                    break
+            
+            # Extract Album (case-insensitive)
+            for col_name in ['album', 'Album', 'Album Name', 'ALBUM']:
+                if col_name in row and row[col_name]:
+                    album = row[col_name].strip()
                     break
 
             if artist and title:
                 # Create a unique key to avoid duplicates
                 key = f"{artist} - {title}"
-                if key not in [f"{a['artist']} - {a['title']}" for a in artists]:
-                    artists.append({'artist': artist, 'title': title})
+                if key not in [f"{t['artist']} - {t['title']}" for t in tracks]:
+                    tracks.append({
+                        'artist': artist,
+                        'title': title,
+                        'album': album if album else ''
+                    })
             elif artist:
-                # Fallback if only artist is found (though we prefer both)
-                if artist not in [a['artist'] for a in artists]:
-                    artists.append({'artist': artist, 'title': ''})
+                # Fallback if only artist is found
+                if artist not in [t['artist'] for t in tracks if not t.get('title')]:
+                    tracks.append({
+                        'artist': artist,
+                        'title': '',
+                        'album': album if album else ''
+                    })
 
-        logger.info(f"Parsed {len(artists)} unique tracks from CSV")
-        return artists
+        logger.info(f"Parsed {len(tracks)} unique tracks from CSV")
+        return tracks
 
     except Exception as e:
         logger.error(f"Error parsing CSV: {e}")
@@ -653,6 +683,7 @@ def background_search_task(search_items: List[Dict]):
 
         artist_str = item.get('artist', '')
         title = item.get('title', '')
+        album = item.get('album', '')
         search_mode = search_state.get('mode', 'artist_title')
         
         # Split artists (handle comma and ampersand)
@@ -664,7 +695,22 @@ def background_search_task(search_items: List[Dict]):
         queries = []
         
         for artist in artists:
-            if search_mode == 'artist_only':
+            if search_mode == 'album':
+                # Album mode: search "Artist Album"
+                if album:
+                    queries.append({'query': f"{artist} {album}", 'display': f"{artist} - {album}", 'type': 'album'})
+                    # Add Romaji variant
+                    romaji_artist = romanizer.to_romaji(artist)
+                    romaji_album = romanizer.to_romaji(album)
+                    if (romaji_artist and romaji_artist != artist) or (romaji_album and romaji_album != album):
+                        r_artist = romaji_artist if romaji_artist else artist
+                        r_album = romaji_album if romaji_album else album
+                        queries.append({'query': f"{r_artist} {r_album}", 'display': f"{artist} - {album} (Romaji)", 'type': 'romaji'})
+                else:
+                    # No album, fall back to artist
+                    queries.append({'query': artist, 'display': artist, 'type': 'original'})
+                    
+            elif search_mode == 'artist_only':
                 queries.append({'query': artist, 'display': artist, 'type': 'original'})
                 # Add Romaji variant if different
                 romaji_artist = romanizer.to_romaji(artist)
@@ -809,7 +855,8 @@ def background_search_task(search_items: List[Dict]):
         unique_results = unique_results[:CONFIG['TOP_RESULTS_COUNT']]
         
         if unique_results:
-            search_manager.add_artist_results(main_key, unique_results, "")
+            # Use the new add_track_results method
+            search_manager.add_track_results(main_key, artist, title, album, unique_results, "")
             
             # Watchlist check
             top_result = unique_results[0]
@@ -817,6 +864,7 @@ def background_search_task(search_items: List[Dict]):
                 watchlist_manager.add_to_watchlist({
                     'artist': artist,
                     'title': title,
+                    'album': album,
                     'username': top_result['username'],
                     'filename': top_result['filename'],
                     'size': top_result['size'],
@@ -824,7 +872,7 @@ def background_search_task(search_items: List[Dict]):
                 })
         else:
              search_state['errors'].append(f"No results for: {main_key}")
-             search_manager.add_artist_results(main_key, [], "")
+             search_manager.add_track_results(main_key, artist, title, album, [], "")
 
         # Update progress
         search_state['progress'] += 1
@@ -852,20 +900,24 @@ def index():
 
     stats = search_manager.get_stats()
 
-    # Get all artists with their info
-    artists = []
-    for name, data in search_manager.results['artists'].items():
-        artists.append({
-            'name': name,
+    # Get all tracks with their info
+    tracks = []
+    tracks_dict = search_manager.results.get('tracks', {})
+    for track_key, data in tracks_dict.items():
+        tracks.append({
+            'key': track_key,
+            'artist': data.get('artist', ''),
+            'title': data.get('title', ''),
+            'album': data.get('album', ''),
             'result_count': data['result_count'],
             'searched_at': data['searched_at'],
             'reviewed': data.get('reviewed', False)
         })
 
     # Sort by search date (newest first)
-    artists.sort(key=lambda x: x['searched_at'], reverse=True)
+    tracks.sort(key=lambda x: x['searched_at'], reverse=True)
 
-    return render_template('index.html', stats=stats, artists=artists, search_state=search_state)
+    return render_template('index.html', stats=stats, tracks=tracks, search_state=search_state)
 
 
 @app.route('/settings', methods=['GET', 'POST'])
@@ -901,18 +953,18 @@ def settings():
     return render_template('settings.html', config=CONFIG)
 
 
-@app.route('/artist/<artist_name>')
-def artist_detail(artist_name: str):
-    """Artist detail page showing top quality search results"""
-    artist_data = search_manager.get_artist_results(artist_name)
+@app.route('/track/<path:track_key>')
+def track_detail(track_key: str):
+    """Track detail page showing top quality search results"""
+    track_data = search_manager.get_track_results(track_key)
 
-    if not artist_data:
-        return "Artist not found", 404
+    if not track_data:
+        return "Track not found", 404
 
     return render_template(
-        'artist.html',
-        artist_name=artist_name,
-        artist_data=artist_data,
+        'track.html',
+        track_key=track_key,
+        track_data=track_data,
         slskd_url=CONFIG['SLSKD_URL']
     )
 
@@ -1031,13 +1083,13 @@ def cancel_search():
     return jsonify({'success': True})
 
 
-@app.route('/api/mark_reviewed/<artist_name>', methods=['POST'])
-def mark_reviewed(artist_name: str):
-    """Mark an artist as reviewed"""
-    success = search_manager.mark_reviewed(artist_name)
+@app.route('/api/mark_reviewed/<path:track_key>', methods=['POST'])
+def mark_reviewed(track_key: str):
+    """Mark a track as reviewed"""
+    success = search_manager.mark_reviewed(track_key)
     if success:
         return jsonify({'success': True})
-    return jsonify({'error': 'Artist not found'}), 404
+    return jsonify({'error': 'Track not found'}), 404
 
 
 @app.route('/api/stats')
@@ -1046,13 +1098,13 @@ def get_stats():
     return jsonify(search_manager.get_stats())
 
 
-@app.route('/artist/<artist_name>/delete', methods=['POST'])
-def delete_artist(artist_name: str):
-    """Delete an artist to allow re-searching"""
-    success = search_manager.delete_artist(artist_name)
+@app.route('/track/<path:track_key>/delete', methods=['POST'])
+def delete_track(track_key: str):
+    """Delete a track to allow re-searching"""
+    success = search_manager.delete_track(track_key)
     if success:
         return jsonify({'success': True})
-    return jsonify({'error': 'Artist not found'}), 404
+    return jsonify({'error': 'Track not found'}), 404
 
 
 @app.route('/export/csv')
@@ -1063,15 +1115,21 @@ def export_csv():
         writer = csv.writer(output)
 
         # Write header
-        writer.writerow(['Artist', 'Username', 'Filename', 'Size (MB)', 'Bitrate', 'Extension',
+        writer.writerow(['Artist', 'Title', 'Album', 'Username', 'Filename', 'Size (MB)', 'Bitrate', 'Extension',
                         'Queue', 'Speed (KB/s)', 'Quality Score', 'Reviewed'])
 
         # Write data
-        for artist_name, artist_data in search_manager.results['artists'].items():
-            reviewed = 'Yes' if artist_data.get('reviewed', False) else 'No'
-            for result in artist_data['results']:
+        tracks = search_manager.results.get('tracks', {})
+        for track_key, track_data in tracks.items():
+            reviewed = 'Yes' if track_data.get('reviewed', False) else 'No'
+            artist = track_data.get('artist', '')
+            title = track_data.get('title', '')
+            album = track_data.get('album', '')
+            for result in track_data['results']:
                 writer.writerow([
-                    artist_name,
+                    artist,
+                    title,
+                    album,
                     result['username'],
                     result['filename'],
                     round(result['size'] / (1024 * 1024), 2),  # Convert to MB

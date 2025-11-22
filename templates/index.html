@@ -8,8 +8,8 @@
     <div class="bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
         <div class="flex items-center justify-between">
             <div>
-                <p class="text-gray-400 text-sm">Total Artists</p>
-                <p class="text-3xl font-bold text-white">{{ stats.total_artists }}</p>
+                <p class="text-gray-400 text-sm">Total Tracks</p>
+                <p class="text-3xl font-bold text-white">{{ stats.total_tracks }}</p>
             </div>
             <div class="bg-blue-500 p-3 rounded-full">
                 <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -25,7 +25,7 @@
         <div class="flex items-center justify-between">
             <div>
                 <p class="text-gray-400 text-sm">With Results</p>
-                <p class="text-3xl font-bold text-white">{{ stats.artists_with_results }}</p>
+                <p class="text-3xl font-bold text-white">{{ stats.tracks_with_results }}</p>
             </div>
             <div class="bg-green-500 p-3 rounded-full">
                 <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -40,7 +40,7 @@
         <div class="flex items-center justify-between">
             <div>
                 <p class="text-gray-400 text-sm">Reviewed</p>
-                <p class="text-3xl font-bold text-white">{{ stats.reviewed_artists }}</p>
+                <p class="text-3xl font-bold text-white">{{ stats.reviewed_tracks }}</p>
             </div>
             <div class="bg-purple-500 p-3 rounded-full">
                 <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,6 +127,10 @@
                     <label class="inline-flex items-center">
                         <input type="radio" name="searchMode" value="artist_only" class="form-radio text-purple-600">
                         <span class="ml-2 text-white">Artist Only (More Results)</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="searchMode" value="album" class="form-radio text-purple-600">
+                        <span class="ml-2 text-white">Album (Best for Full Albums)</span>
                     </label>
                 </div>
             </div>
@@ -216,27 +220,30 @@
                     </th>
                 </tr>
             </thead>
-            <tbody id="artistTableBody" class="bg-gray-800 dark:bg-gray-800 divide-y divide-gray-700">
-                {% for artist in artists %}
-                <tr class="hover:bg-gray-700 transition-all duration-200 hover:scale-[1.01] artist-row animate-fade-in"
-                    style="animation-delay: {{ loop.index0 * 50 }}ms" data-reviewed="{{ artist.reviewed|lower }}">
+            <tbody id="trackTableBody" class="bg-gray-800 dark:bg-gray-800 divide-y divide-gray-700">
+                {% for track in tracks %}
+                <tr class="hover:bg-gray-700 transition-all duration-200 hover:scale-[1.01] track-row animate-fade-in"
+                    style="animation-delay: {{ loop.index0 * 50 }}ms" data-reviewed="{{ track.reviewed|lower }}">
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <a href="/artist/{{ artist.name|urlencode }}"
+                        <a href="/track/{{ track.key|urlencode }}"
                             class="text-blue-400 hover:text-blue-300 font-medium">
-                            {{ artist.name }}
+                            {{ track.artist }} - {{ track.title }}
                         </a>
+                        {% if track.album %}
+                        <p class="text-xs text-gray-400 mt-1">{{ track.album }}</p>
+                        {% endif %}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span
-                            class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {% if artist.result_count > 0 %}bg-green-900 text-green-200{% else %}bg-red-900 text-red-200{% endif %}">
-                            {{ artist.result_count }} files
+                            class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {% if track.result_count > 0 %}bg-green-900 text-green-200{% else %}bg-red-900 text-red-200{% endif %}">
+                            {{ track.result_count }} files
                         </span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                        {{ artist.searched_at.split('T')[0] }}
+                        {{ track.searched_at.split('T')[0] }}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        {% if artist.reviewed %}
+                        {% if track.reviewed %}
                         <span
                             class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-900 text-purple-200">
                             ✓ Reviewed
@@ -249,7 +256,7 @@
                         {% endif %}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        <a href="/artist/{{ artist.name|urlencode }}"
+                        <a href="/track/{{ track.key|urlencode }}"
                             class="text-blue-400 hover:text-blue-300 mr-3">View</a>
                     </td>
                 </tr>
@@ -258,15 +265,15 @@
         </table>
     </div>
 
-    {% if artists|length == 0 %}
+    {% if tracks|length == 0 %}
     <div class="p-12 text-center">
         <svg class="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4">
             </path>
         </svg>
-        <p class="text-xl text-gray-400">No artists searched yet</p>
-        <p class="text-sm text-gray-500 mt-2">Upload a Spotify CSV to get started</p>
+        <p class="text-xl text-gray-400">No tracks searched yet</p>
+        <p class="text-sm text-gray-500 mt-2">Upload a CSV to get started</p>
     </div>
     {% endif %}
 </div>
