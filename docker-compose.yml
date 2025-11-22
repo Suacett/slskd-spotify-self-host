@@ -17,6 +17,10 @@ services:
       - FLASK_ENV=production
     volumes:
       - ./data:/app/data
+      - ./app.py:/app/app.py
+      - ./musicbrainz_client.py:/app/musicbrainz_client.py
+      - ./isrc_tracker.py:/app/isrc_tracker.py
+      - ./templates:/app/templates
     networks:
       - default
     labels:

@@ -18,6 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app.py .
+COPY musicbrainz_client.py .
+COPY isrc_tracker.py .
 COPY templates/ templates/
 
 # Create data directory
