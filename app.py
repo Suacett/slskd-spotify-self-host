@@ -966,68 +966,6 @@ def background_search_task(search_items: List[Dict] = None):
         if not search_state['active']:
             return
 
-        artist = item.get('artist')
-        title = item.get('title')
-        album = item.get('album', '')
-        
-        display_name = f"{artist} - {title}"
-        search_state['current_item'] = display_name
-        save_application_state(search_state)
-
-        # Check if already searched/reviewed? (Optional optimization)
-        
-        # 1. Get Metadata (MusicBrainz)
-        mb_metadata = None
-        try:
-            mb_metadata = musicbrainz_client.search_track(artist, title, album)
-            if mb_metadata:
-                logger.info(f"Found MusicBrainz metadata for {display_name}: {mb_metadata.get('id')}")
-        except Exception as e:
-            logger.warning(f"MusicBrainz lookup failed for {display_name}: {e}")
-
-        # 2. Search Slskd
-        results, search_id = search_single_item(client, item)
-        
-        # 3. Save Results
-        key = f"{artist} - {title}"
-        search_manager.add_track_results(
-            track_key=key,
-            artist=artist,
-            title=title,
-            album=album,
-            results=results,
-            search_id=search_id,
-            musicbrainz_metadata=mb_metadata
-        )
-
-        search_state['progress'] += 1
-        save_application_state(search_state)
-
-    # Process queue
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        while True:
-            item = queue_manager.get_next()
-            if not item:
-                break
-            
-            if not search_state['active']:
-                break
-
-            try:
-                process_item(item)
-            except Exception as e:
-                logger.error(f"Error processing item {item}: {e}")
-                search_state['errors'].append(str(e))
-            
-            # Small delay between searches to be nice
-            time.sleep(1)
-
-    search_state['active'] = False
-    search_state['completed'] = True
-    save_application_state(search_state)
-    logger.info("Background search completed")
-            return
-
         item_id = f"{item.get('artist', '')} - {item.get('title', '')}"
         logger.info(f"[WORKER] Processing item: {item_id}")
 
@@ -1043,15 +981,9 @@ def background_search_task(search_items: List[Dict] = None):
                 mb_metadata = musicbrainz_client.get_track_metadata(artist_str, title)
                 if mb_metadata:
                     logger.info(f"[MB] Found metadata: {mb_metadata.get('title')} ({mb_metadata.get('duration_ms')}ms) ISRC: {mb_metadata.get('isrc')}")
-                    # Store metadata in item for later use
                     item['musicbrainz_metadata'] = mb_metadata
-                    # Use official names if available, but keep original for search variants
-                    # artist_str = mb_metadata.get('artist', artist_str)
-                    # title = mb_metadata.get('title', title)
-                    # album = mb_metadata.get('album', album)
             except Exception as e:
                 logger.error(f"[MB] Error querying MusicBrainz: {e}")
-                # Continue without MusicBrainz data
                 pass
         
         # Split artists (handle comma and ampersand)
@@ -1064,10 +996,8 @@ def background_search_task(search_items: List[Dict] = None):
         
         for artist in artists:
             if search_mode == 'album':
-                # Album mode: search "Artist Album"
                 if album:
                     queries.append({'query': f"{artist} {album}", 'display': f"{artist} - {album}", 'type': 'album'})
-                    # Add Romaji variant
                     romaji_artist = romanizer.to_romaji(artist)
                     romaji_album = romanizer.to_romaji(album)
                     if (romaji_artist and romaji_artist != artist) or (romaji_album and romaji_album != album):
@@ -1075,12 +1005,10 @@ def background_search_task(search_items: List[Dict] = None):
                         r_album = romaji_album if romaji_album else album
                         queries.append({'query': f"{r_artist} {r_album}", 'display': f"{artist} - {album} (Romaji)", 'type': 'romaji'})
                 else:
-                    # No album, fall back to artist
                     queries.append({'query': artist, 'display': artist, 'type': 'original'})
                     
             elif search_mode == 'artist_only':
                 queries.append({'query': artist, 'display': artist, 'type': 'original'})
-                # Add Romaji variant if different
                 romaji_artist = romanizer.to_romaji(artist)
                 if romaji_artist and romaji_artist != artist:
                     queries.append({'query': romaji_artist, 'display': f"{artist} ({romaji_artist})", 'type': 'romaji'})
@@ -1088,11 +1016,9 @@ def background_search_task(search_items: List[Dict] = None):
             else: # artist_title
                 if title:
                     queries.append({'query': f"{artist} {title}", 'display': f"{artist} - {title}", 'type': 'original'})
-                    # Add Romaji variant
                     romaji_artist = romanizer.to_romaji(artist)
                     romaji_title = romanizer.to_romaji(title)
                     if (romaji_artist and romaji_artist != artist) or (romaji_title and romaji_title != title):
-                        # Try mixed combinations? For now just full romaji
                         r_artist = romaji_artist if romaji_artist else artist
                         r_title = romaji_title if romaji_title else title
                         queries.append({'query': f"{r_artist} {r_title}", 'display': f"{artist} - {title} (Romaji)", 'type': 'romaji'})
@@ -1105,41 +1031,20 @@ def background_search_task(search_items: List[Dict] = None):
 
             display_name = q['display']
             search_state['current_item'] = display_name
-
-            # Jitter (Randomized 0.5-1.5s for faster searches)
+            
+            # Jitter
             time.sleep(random.uniform(0.5, 1.5))
 
-            # Check if already searched (skip only if we have results?)
-            # For now, let's search all variants if not found
-            
-            # Search
-            # Create a temp item for search_single_item to use
-            # We need to bypass the query construction in search_single_item or modify it
-            # Let's modify search_single_item to accept a direct query or handle this better.
-            # Actually, let's just call client.search directly here or adapt search_single_item.
-            
-            # Refactor search_single_item to take a query string directly?
-            # Or just pass the query as 'artist' and empty title to trick it?
-            # Better: Update search_single_item to accept optional override query.
-            
-            # Let's just do the search here to avoid breaking search_single_item signature too much
-            # or update search_single_item.
-            
             try:
                 logger.info(f"Searching for: {q['query']}")
                 search_response = client.search(q['query'])
                 search_id = search_response.get('id')
                 
                 if search_id:
-                    logger.info(f"[WORKER] Search ID {search_id} for '{q['query']}'. Waiting {CONFIG['SEARCH_DELAY']}s...")
                     time.sleep(CONFIG['SEARCH_DELAY'])
-                    
-                    logger.info(f"[WORKER] Fetching results for ID {search_id}...")
                     results_response = client.get_search_results(search_id)
                     files = results_response.get('files', [])
-                    logger.info(f"[WORKER] Got {len(files)} raw files for '{q['query']}'")
                     
-                    # Process results (similar to search_single_item)
                     all_results = []
                     for file_info in files:
                         try:
@@ -1153,9 +1058,7 @@ def background_search_task(search_items: List[Dict] = None):
                             speed_kbs = upload_speed / 1024 if upload_speed else 0
                             has_free_slot = file_info.get('hasFreeUploadSlot', False)
                             is_locked = file_info.get('isLocked', False)
-
-                            # Extract duration (length in seconds, Slskd may provide this)
-                            duration_seconds = file_info.get('length')  # Duration in seconds
+                            duration_seconds = file_info.get('length')
 
                             result_dict = {
                                 'username': username,
@@ -1168,37 +1071,16 @@ def background_search_task(search_items: List[Dict] = None):
                                 'has_free_slot': has_free_slot,
                                 'is_locked': is_locked,
                                 'duration_seconds': duration_seconds,
-                                'requested_title': title if title else artist # For fuzzy match
+                                'requested_title': title if title else artist
                             }
                             all_results.append(result_dict)
                         except:
                             continue
 
-                    # Get MusicBrainz metadata from item
                     musicbrainz_metadata = item.get('musicbrainz_metadata')
                     top_results = rank_and_filter_results(all_results, musicbrainz_metadata)
                     
                     if top_results:
-                        # Store results under the original display name (Artist - Title)
-                        # so they show up together? Or separate?
-                        # User wants to see results.
-                        # If we search Romaji, we should probably merge results into the main item?
-                        # For simplicity, let's add them to the main item key.
-                        main_key = f"{artist} - {title}" if title else artist
-                        
-                        # We need to merge with existing if any
-                        existing = search_manager.get_track_results(main_key)
-                        if existing:
-                            # Merge logic could be complex. 
-                            # For now, let's just add them.
-                            # But search_manager.add_artist_results overwrites.
-                            # We should probably fetch, merge, save.
-                            # But wait, add_artist_results overwrites.
-                            # Let's just save it under the main key. 
-                            # If we have multiple queries for one item, we should collect all results first.
-                            pass
-                        
-                        # Collect all results for this item across queries
                         if 'collected_results' not in item:
                             item['collected_results'] = []
                         item['collected_results'].extend(top_results)
@@ -1208,14 +1090,12 @@ def background_search_task(search_items: List[Dict] = None):
                     
             except Exception as e:
                 logger.error(f"[WORKER] Error searching {q['query']}: {e}")
-                import traceback
-                logger.error(f"[WORKER] Traceback: {traceback.format_exc()}")
 
         # After all queries for this item, save results
         main_key = f"{artist} - {title}" if title else artist
         final_results = item.get('collected_results', [])
         
-        # Deduplicate based on filename + username
+        # Deduplicate
         unique_results = []
         seen = set()
         for r in final_results:
@@ -1228,12 +1108,9 @@ def background_search_task(search_items: List[Dict] = None):
         unique_results.sort(key=lambda x: x['quality_score'], reverse=True)
         unique_results = unique_results[:CONFIG['TOP_RESULTS_COUNT']]
         
-        # Get MusicBrainz metadata from item
         musicbrainz_metadata = item.get('musicbrainz_metadata')
 
-        # Save results
         if unique_results:
-            logger.info(f"[WORKER] Found {len(unique_results)} unique results for {item_id}")
             search_manager.add_track_results(
                 main_key, 
                 artist_str, 
@@ -1257,22 +1134,31 @@ def background_search_task(search_items: List[Dict] = None):
                 })
         else:
              search_state['errors'].append(f"No results for: {main_key}")
-             # Still save MusicBrainz metadata even if no Slskd results
-             mb_metadata = item.get('musicbrainz_metadata')
-             search_manager.add_track_results(main_key, artist, title, album, [], "", mb_metadata)
+             search_manager.add_track_results(main_key, artist, title, album, [], "", musicbrainz_metadata)
 
-        # Update progress
         search_state['progress'] += 1
-        logger.info(f"[WORKER] ✓ Finished item: {item_id}. Progress: {search_state['progress']}/{search_state['total']}")
+        save_application_state(search_state)
+        logger.info(f"[WORKER] Finished item: {item_id}")
 
-    # Use ThreadPoolExecutor for concurrency (8 workers for optimal speed)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        futures = [executor.submit(process_item, item) for item in search_items]
-        concurrent.futures.wait(futures)
+    # Drain queue and process
+    items_to_process = []
+    while True:
+        item = queue_manager.get_next()
+        if not item: break
+        items_to_process.append(item)
+    
+    if items_to_process:
+        # Update total count in case it changed
+        search_state['total'] = len(items_to_process) + search_state.get('progress', 0)
+        save_application_state(search_state)
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(process_item, item) for item in items_to_process]
+            concurrent.futures.wait(futures)
 
-    # Mark as completed
     search_state['active'] = False
     search_state['completed'] = True
+    save_application_state(search_state)
     logger.info("Background search completed")
 
 
