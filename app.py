@@ -1270,12 +1270,10 @@ def delete_track(track_key):
             else:
                 artist = parts[0]
 
-        # Delete from results (Fixed: changed remove_track to delete_track)
+        # Delete from results
+        # FIXED: Changed from remove_track to delete_track
         success = search_manager.delete_track(track_key)
         
-        if not success:
-             return jsonify({'error': 'Track not found'}), 404
-
         if research and artist:
             # Add back to queue
             queue_manager.add_items([{
@@ -1437,22 +1435,6 @@ def mark_reviewed(track_key: str):
 def get_stats():
     """Get statistics"""
     return jsonify(search_manager.get_stats())
-
-
-@app.route('/track/<path:track_key>/delete', methods=['POST'])
-def delete_track(track_key: str):
-    """Delete a track to allow re-searching"""
-    try:
-        success = search_manager.delete_track(track_key)
-        if success:
-            logger.info(f"Deleted track: {track_key}")
-            return jsonify({'success': True, 'message': 'Track deleted successfully'})
-        else:
-            return jsonify({'error': 'Track not found'}), 404
-    except Exception as e:
-        logger.error(f"Error deleting track {track_key}: {e}")
-        return jsonify({'error': str(e)}), 500
-
 
 @app.route('/export/csv')
 def export_csv():
