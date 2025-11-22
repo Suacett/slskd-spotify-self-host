@@ -341,14 +341,42 @@ class SlskdClient:
         
         logger.info(f"SlskdClient initialized with Base URL: {self.base_url}")
 
+    def _request_with_retry(self, method, url, **kwargs):
+        """Helper to handle rate limits with retry"""
+        max_retries = 3
+        backoff = 1
+        
+        for i in range(max_retries + 1):
+            try:
+                response = requests.request(method, url, headers=self.headers, **kwargs)
+                
+                if response.status_code == 429:
+                    if i == max_retries:
+                        response.raise_for_status()
+                    
+                    wait_time = backoff * (2 ** i)
+                    logger.warning(f"Rate limited (429). Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                    
+                response.raise_for_status()
+                return response
+                
+            except requests.exceptions.RequestException as e:
+                if i == max_retries:
+                    raise
+                # Only retry on specific errors if needed, but for now mainly 429 which is handled above.
+                # If it's a connection error, maybe retry?
+                # For now, let's stick to 429 handling logic within the loop.
+                raise
+
     def search(self, query, timeout=15):
         """Initiate a search"""
         url = f"{self.base_url}/searches"
         try:
             # Slskd expects search text in the body or query param? 
             # Based on docs/usage, usually POST to /search with {searchText: "..."}
-            response = requests.post(url, json={'searchText': query}, headers=self.headers, timeout=10)
-            response.raise_for_status()
+            response = self._request_with_retry('POST', url, json={'searchText': query}, timeout=10)
             return response.json()
         except Exception as e:
             logger.error(f"Search init failed for {url}: {e}")
@@ -356,10 +384,9 @@ class SlskdClient:
 
     def get_search_results(self, search_id):
         """Get results for a search ID"""
-        url = f"{self.base_url}/search/{search_id}"
+        url = f"{self.base_url}/searches/{search_id}"
         try:
-            response = requests.get(url, headers=self.headers, timeout=10)
-            response.raise_for_status()
+            response = self._request_with_retry('GET', url, timeout=10)
             return response.json()
         except Exception as e:
             logger.error(f"Get results failed: {e}")
@@ -369,8 +396,7 @@ class SlskdClient:
         """Get application state"""
         url = f"{self.base_url}/application"
         try:
-            response = requests.get(url, headers=self.headers, timeout=5)
-            response.raise_for_status()
+            response = self._request_with_retry('GET', url, timeout=5)
             return response.json()
         except Exception as e:
             logger.error(f"Get state failed: {e}")
