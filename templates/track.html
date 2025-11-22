@@ -124,134 +124,205 @@
 
 <!-- Top Results List -->
 {% if track_data.result_count > 0 %}
-<div class="space-y-4">
+<div class="mb-4 flex justify-end items-center space-x-4">
+    <label class="inline-flex items-center cursor-pointer">
+        <input type="checkbox" id="showAllToggle" class="sr-only peer" onchange="toggleLowQuality()">
+        <div
+            class="relative w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600">
+        </div>
+        <span class="ms-3 text-sm font-medium text-gray-300">Show Lower Quality / Hidden</span>
+    </label>
+</div>
+
+<div class="space-y-4" id="resultsContainer">
     {% for result in track_data.results %}
-    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-[1.01] overflow-hidden border-l-4
+    <!-- Determine if this result should be hidden by default -->
+    {% set is_low_quality = result.quality_score < 0 or result.queue_length> 50 or result.bitrate < 192 %} {% set
+            is_hidden=loop.index> 10 or is_low_quality %}
+
+            <div class="result-card bg-gray-800 dark:bg-gray-800 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-[1.01] overflow-hidden border-l-4
         {% if result.extension in ['flac', 'wav', 'alac', 'ape'] %}
         border-purple-500
         {% elif result.bitrate >= 320 %}
         border-blue-500
         {% else %}
         border-gray-600
-        {% endif %}">
-        <div class="p-6">
-            <!-- Header Row -->
-            <div class="flex justify-between items-start mb-4">
-                <div class="flex-1">
-                    <div class="flex items-center space-x-3 mb-2">
-                        <span class="text-2xl font-bold text-white">#{{ loop.index }}</span>
+        {% endif %}
+        {% if is_hidden %}hidden-result {% if loop.index > 10 %}excess-result{% endif %} {% if is_low_quality %}low-quality-result{% endif %}{% endif %}"
+                style="{% if is_hidden %}display: none;{% endif %}">
+                <div class="p-4"> <!-- Reduced padding -->
+                    <!-- Header Row -->
+                    <div class="flex justify-between items-start mb-2">
+                        <div class="flex-1">
+                            <div class="flex items-center space-x-2 mb-1 flex-wrap gap-y-2">
+                                <span class="text-xl font-bold text-white mr-2">#{{ loop.index }}</span>
 
-                        <!-- Quality Badge -->
-                        {% if result.extension in ['flac', 'wav', 'alac', 'ape'] %}
-                        <span
-                            class="px-4 py-2 inline-flex text-sm font-bold rounded-full bg-purple-900 text-purple-200 border border-purple-500">
-                            🎵 {{ result.extension.upper() }} • LOSSLESS
-                        </span>
-                        {% elif result.bitrate >= 320 %}
-                        <span
-                            class="px-4 py-2 inline-flex text-sm font-bold rounded-full bg-blue-900 text-blue-200 border border-blue-500">
-                            🎧 {{ result.bitrate }} kbps • HIGH QUALITY
-                        </span>
-                        {% elif result.bitrate >= 256 %}
-                        <span class="px-4 py-2 inline-flex text-sm font-bold rounded-full bg-green-900 text-green-200">
-                            {{ result.bitrate }} kbps
-                        </span>
-                        {% else %}
-                        <span class="px-4 py-2 inline-flex text-sm font-bold rounded-full bg-gray-700 text-gray-300">
-                            {{ result.bitrate }} kbps
-                        </span>
-                        {% endif %}
+                                <!-- Quality Badge -->
+                                {% if result.extension in ['flac', 'wav', 'alac', 'ape'] %}
+                                <span
+                                    class="px-2 py-0.5 inline-flex text-xs font-bold rounded-full bg-purple-900 text-purple-200 border border-purple-500">
+                                    FLAC
+                                </span>
+                                {% elif result.bitrate >= 320 %}
+                                <span
+                                    class="px-2 py-0.5 inline-flex text-xs font-bold rounded-full bg-blue-900 text-blue-200 border border-blue-500">
+                                    320kbps
+                                </span>
+                                {% else %}
+                                <span
+                                    class="px-2 py-0.5 inline-flex text-xs font-bold rounded-full bg-gray-700 text-gray-300">
+                                    {{ result.bitrate }}kbps
+                                </span>
+                                {% endif %}
 
-                        <!-- Quality Score -->
-                        {% if result.quality_score %}
-                        <span
-                            class="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-yellow-900 text-yellow-200">
-                            ⭐ Score: {{ "%.1f"|format(result.quality_score) }}
-                        </span>
-                        {% endif %}
+                                <!-- Quality Score -->
+                                {% if result.quality_score %}
+                                <span
+                                    class="px-2 py-0.5 inline-flex text-xs font-semibold rounded-full {% if result.quality_score > 0 %}bg-green-900 text-green-200{% else %}bg-red-900 text-red-200{% endif %}">
+                                    {{ "%.0f"|format(result.quality_score) }} pts
+                                </span>
+                                {% endif %}
 
-                        <!-- Instant Download Badge -->
-                        {% if result.queue_length == 0 or result.has_free_slot %}
-                        <span
-                            class="px-3 py-1 inline-flex text-xs font-bold rounded-full bg-green-600 text-white animate-pulse">
-                            ⚡ INSTANT START
-                        </span>
-                        {% endif %}
+                                <!-- Instant Download Badge -->
+                                {% if result.queue_length == 0 or result.has_free_slot %}
+                                <span
+                                    class="px-2 py-0.5 inline-flex text-xs font-bold rounded-full bg-green-600 text-white">
+                                    INSTANT
+                                </span>
+                                {% endif %}
+                            </div>
+
+                            <!-- Filename -->
+                            <p class="mono text-gray-300 text-sm font-medium break-all hover:text-white transition-colors cursor-help"
+                                title="{{ result.filename }}">
+                                {{ result.filename }}
+                            </p>
+                        </div>
                     </div>
 
-                    <!-- Filename -->
-                    <p class="mono text-white text-lg font-medium break-all">
-                        {{ result.filename }}
-                    </p>
+                    <!-- Stats Grid - Compact -->
+                    <div class="grid grid-cols-4 gap-2 mb-3 text-xs">
+                        <div class="text-center bg-gray-700 rounded p-1">
+                            <span class="text-gray-400">Size:</span>
+                            <span class="text-white font-bold">{{ "%.1f"|format(result.size / (1024*1024)) }}MB</span>
+                        </div>
+
+                        <div class="text-center bg-gray-700 rounded p-1">
+                            <span class="text-gray-400">Q:</span>
+                            <span
+                                class="{% if result.queue_length == 0 %}text-green-400{% elif result.queue_length <= 10 %}text-yellow-400{% else %}text-red-400{% endif %} font-bold">
+                                {{ result.queue_length }}
+                            </span>
+                        </div>
+
+                        <div class="text-center bg-gray-700 rounded p-1">
+                            <span class="text-gray-400">Spd:</span>
+                            <span class="text-white font-bold">
+                                {% if result.speed_kbs >= 1000 %}
+                                {{ "%.1f"|format(result.speed_kbs / 1024) }}M/s
+                                {% else %}
+                                {{ "%.0f"|format(result.speed_kbs) }}K/s
+                                {% endif %}
+                            </span>
+                        </div>
+
+                        <div class="text-center bg-gray-700 rounded p-1 truncate" title="{{ result.username }}">
+                            <span class="text-white">{{ result.username }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex gap-2">
+                        <button data-filename="{{ result.filename }}" data-username="{{ result.username }}"
+                            onclick="downloadTrackFromData(this)"
+                            class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-sm transition-all {% if is_duplicate %}opacity-50 cursor-not-allowed{% endif %}"
+                            {% if is_duplicate %}disabled{% endif %}>
+                            Download
+                        </button>
+
+                        <a href="{{ slskd_url }}" target="_blank" rel="noopener noreferrer"
+                            class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm transition-all">
+                            Slskd
+                        </a>
+                    </div>
                 </div>
             </div>
-
-            <!-- Stats Grid -->
-            <div class="grid grid-cols-4 gap-4 mb-4">
-                <div class="text-center bg-gray-700 rounded-lg p-3">
-                    <p class="text-gray-400 text-xs uppercase">Size</p>
-                    <p class="text-white font-bold">{{ "%.1f"|format(result.size / (1024*1024)) }} MB</p>
-                </div>
-
-                <div class="text-center bg-gray-700 rounded-lg p-3">
-                    <p class="text-gray-400 text-xs uppercase">Queue</p>
-                    <p
-                        class="{% if result.queue_length == 0 %}text-green-400{% elif result.queue_length <= 10 %}text-yellow-400{% else %}text-red-400{% endif %} font-bold">
-                        {% if result.queue_length == 0 %}
-                        No Wait
-                        {% else %}
-                        {{ result.queue_length }} slots
-                        {% endif %}
-                    </p>
-                </div>
-
-                <div class="text-center bg-gray-700 rounded-lg p-3">
-                    <p class="text-gray-400 text-xs uppercase">Speed</p>
-                    <p class="text-white font-bold">
-                        {% if result.speed_kbs >= 1000 %}
-                        {{ "%.1f"|format(result.speed_kbs / 1024) }} MB/s
-                        {% else %}
-                        {{ "%.0f"|format(result.speed_kbs) }} KB/s
-                        {% endif %}
-                    </p>
-                </div>
-
-                <div class="text-center bg-gray-700 rounded-lg p-3">
-                    <p class="text-gray-400 text-xs uppercase">User</p>
-                    <p class="text-white font-bold truncate" title="{{ result.username }}">{{ result.username }}</p>
-                </div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="grid grid-cols-2 gap-3">
-                {% if loop.index == 1 %}
-                <!-- Download button for top result -->
-                <button onclick="downloadTrack()"
-                    class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 {% if is_duplicate %}opacity-50 cursor-not-allowed{% endif %}"
-                    {% if is_duplicate %}disabled title="Track already downloaded" {% endif %}>
-                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                    </svg>
-                    {% if is_duplicate %}Already Downloaded{% else %}Download Now{% endif %}
-                </button>
-                {% else %}
-                <div></div>
-                {% endif %}
-
-                <a href="{{ slskd_url }}" target="_blank" rel="noopener noreferrer"
-                    class="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 text-center">
-                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                    </svg>
-                    Open in Slskd
-                </a>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
+            {% endfor %}
 </div>
+
+{% if track_data.results|length > 10 %}
+<div class="text-center mt-6">
+    <button id="showMoreBtn" onclick="showMoreResults()"
+        class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-full transition-all">
+        Show More Results
+    </button>
+</div>
+{% endif %}
+
+<script>
+    function toggleLowQuality() {
+        const toggle = document.getElementById('showAllToggle');
+        const lowQualityItems = document.querySelectorAll('.low-quality-result');
+
+        lowQualityItems.forEach(item => {
+            // Only show if it's not also hidden by "excess" (index > 10) unless Show More is clicked
+            // Actually, let's just toggle the low-quality class visibility
+            // But we need to respect the "Show More" state too.
+            // Simplified: Toggle visibility of anything marked low-quality
+            if (toggle.checked) {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    function showMoreResults() {
+        const excessItems = document.querySelectorAll('.excess-result');
+        excessItems.forEach(item => {
+            // Only show if not low quality, OR if low quality is enabled
+            if (!item.classList.contains('low-quality-result') || document.getElementById('showAllToggle').checked) {
+                item.style.display = 'block';
+            }
+            item.classList.remove('excess-result'); // Remove class so they stay shown
+        });
+        document.getElementById('showMoreBtn').style.display = 'none';
+    }
+
+    function downloadTrackFromData(btn) {
+        const filename = btn.dataset.filename;
+        const username = btn.dataset.username;
+        downloadTrack(filename, username);
+    }
+
+    // Update download function to accept filename/user
+    async function downloadTrack(filename, username) {
+        // Use default if not provided (legacy support or top result)
+        // But here we expect specific filename/username
+
+        try {
+            const response = await fetch('/download/specific', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: username,
+                    filename: filename,
+                    track_key: trackKey
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                showNotification(`Download started: ${filename}`, 'success');
+            } else {
+                showNotification(data.error || 'Failed', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            showNotification('Error: ' + e.message, 'error');
+        }
+    }
+</script>
 
 {% else %}
 <!-- No Results -->
@@ -340,26 +411,25 @@
     }
 
     async function deleteAndResearch() {
-        if (!confirm('Are you sure you want to delete this track and re-search? This will remove all current results.')) {
-            return;
-        }
+        if (!confirm('Are you sure you want to delete this track and research it?')) return;
 
         try {
-            const response = await fetch(`/track/${encodeURIComponent(trackKey)}/delete`, {
+            const response = await fetch(`/track/${trackKey}/delete?research=true`, {
                 method: 'POST'
             });
-
             const data = await response.json();
 
             if (data.success) {
-                showNotification('Track deleted. Redirecting...', 'success');
-                setTimeout(() => window.location.href = '/', 1500);
+                showNotification('Track deleted and queued for research', 'success');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000);
             } else {
-                showNotification('Failed to delete track', 'error');
+                showNotification(data.error || 'Failed to delete', 'error');
             }
-        } catch (error) {
-            console.error('Delete error:', error);
-            showNotification('Error: ' + error.message, 'error');
+        } catch (e) {
+            console.error(e);
+            showNotification('Error: ' + e.message, 'error');
         }
     }
 

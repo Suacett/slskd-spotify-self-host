@@ -177,128 +177,102 @@
     </div>
 </div>
 
-<!-- Artist List -->
-<div class="bg-gray-800 dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-    <div class="p-6 border-b border-gray-700">
-        <div class="flex justify-between items-center">
-            <h2 class="text-2xl font-bold text-white">Tracks</h2>
-            <div class="flex space-x-3">
-                <button onclick="filterArtists('all')"
-                    class="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition filter-btn"
-                    data-filter="all">All</button>
-                <button onclick="filterArtists('reviewed')"
-                    class="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition filter-btn"
-                    data-filter="reviewed">Reviewed</button>
-                <button onclick="filterArtists('unreviewed')"
-                    class="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition filter-btn"
-                    data-filter="unreviewed">Not Reviewed</button>
-                <a href="/export/csv"
-                    class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition inline-flex items-center">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<!-- Album List -->
+<div class="space-y-8">
+    {% for album_key, album in albums.items() %}
+    <div class="bg-gray-800 dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden border border-gray-700">
+        <div
+            class="p-4 bg-gray-750 border-b border-gray-700 flex justify-between items-center bg-gradient-to-r from-gray-800 to-gray-700">
+            <div>
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <svg class="w-6 h-6 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                            d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3">
                         </path>
                     </svg>
-                    Export CSV
-                </a>
-                <button onclick="downloadSelected()" id="downloadSelectedBtn"
-                    class="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition inline-flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled>
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10">
-                        </path>
-                    </svg>
-                    Download Selected (<span id="selectedCount">0</span>)
-                </button>
+                    {{ album.name }}
+                </h3>
+                <p class="text-gray-400 text-sm ml-8">{{ album.artist }}</p>
+            </div>
+            <div class="flex items-center space-x-2">
+                <span class="px-3 py-1 bg-gray-700 rounded-full text-xs text-gray-300">{{ album.tracks|length }}
+                    Tracks</span>
             </div>
         </div>
-    </div>
 
-    <div class="overflow-x-auto">
-        <table class="w-full">
-            <thead class="bg-gray-700 dark:bg-gray-700">
-                <tr>
-                    <th class="px-6 py-3 text-left">
-                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll()"
-                            class="form-checkbox h-5 w-5 text-purple-600 rounded">
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-600"
-                        onclick="sortTable('name')">
-                        Track Details ↕
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-600"
-                        onclick="sortTable('results')">
-                        Results ↕
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-600"
-                        onclick="sortTable('date')">
-                        Searched Date ↕
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                        Status
-                    </th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                        Actions
-                    </th>
-                </tr>
-            </thead>
-            <tbody id="trackTableBody" class="bg-gray-800 dark:bg-gray-800 divide-y divide-gray-700">
-                {% for track in tracks %}
-                <tr class="hover:bg-gray-700 transition-all duration-200 hover:scale-[1.01] track-row animate-fade-in"
-                    style="animation-delay: {{ loop.index0 * 50 }}ms" data-reviewed="{{ track.reviewed|lower }}">
-                    <td class="px-6 py-4">
-                        <input type="checkbox" class="track-checkbox form-checkbox h-5 w-5 text-purple-600 rounded"
-                            value="{{ track.key }}" onchange="updateSelectedCount()">
-                    </td>
-                    <td class="px-6 py-4">
-                        <div>
-                            <a href="/track/{{ track.key|urlencode }}"
-                                class="text-blue-400 hover:text-blue-300 font-medium text-base">
-                                {{ track.title }}
-                            </a>
-                            <div class="text-sm text-gray-400 mt-1">{{ track.artist }}</div>
-                            {% if track.album %}
-                            <div class="text-xs text-gray-500 mt-1">Album: {{ track.album }}</div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-900 bg-opacity-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider w-12">
+                            <input type="checkbox" class="album-checkbox form-checkbox h-4 w-4 text-purple-600 rounded"
+                                data-album="{{ album_key }}" onchange="toggleAlbum(this)">
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Track
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                            Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                            Results</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                            Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-700">
+                    {% for track in album.tracks %}
+                    <tr class="hover:bg-gray-700 transition-colors duration-150 group">
+                        <td class="px-6 py-3">
+                            <input type="checkbox" class="track-checkbox form-checkbox h-4 w-4 text-purple-600 rounded"
+                                value="{{ track.key }}" data-album="{{ album_key }}" onchange="updateSelectedCount()">
+                        </td>
+                        <td class="px-6 py-3">
+                            <div class="flex items-center">
+                                <span class="text-gray-300 font-medium group-hover:text-white">{{ track.title }}</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-3">
+                            {% if track.reviewed %}
+                            <span
+                                class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-900 text-green-200">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                Reviewed
+                            </span>
+                            {% else %}
+                            <span
+                                class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-700 text-gray-300">
+                                Pending
+                            </span>
                             {% endif %}
-                        </div>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <span
-                            class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {% if track.result_count > 0 %}bg-green-900 text-green-200{% else %}bg-red-900 text-red-200{% endif %}">
-                            {{ track.result_count }} files
-                        </span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                        {{ track.searched_at.split('T')[0] }}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        {% if track.reviewed %}
-                        <span
-                            class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-900 text-purple-200">
-                            ✓ Reviewed
-                        </span>
-                        {% else %}
-                        <span
-                            class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-700 text-gray-300">
-                            Pending
-                        </span>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                        <a href="/track/{{ track.key|urlencode }}" class="text-blue-400 hover:text-blue-300">View</a>
-                        <a href="{{ slskd_url }}/search?q={{ (track.artist + ' ' + track.title)|urlencode }}"
-                            target="_blank" rel="noopener noreferrer" class="text-green-400 hover:text-green-300">Manual
-                            Search</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                        </td>
+                        <td class="px-6 py-3">
+                            <span
+                                class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full {% if track.result_count > 0 %}bg-blue-900 text-blue-200{% else %}bg-red-900 text-red-200{% endif %}">
+                                {{ track.result_count }} found
+                            </span>
+                        </td>
+                        <td class="px-6 py-3 text-sm space-x-3">
+                            <a href="/track/{{ track.key|urlencode }}"
+                                class="text-blue-400 hover:text-blue-300 font-medium">View</a>
+                            <a href="{{ slskd_url }}/search?q={{ (track.artist + ' ' + track.title)|urlencode }}"
+                                target="_blank" rel="noopener noreferrer"
+                                class="text-gray-500 hover:text-white transition-colors" title="Manual Search">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
-
-    {% if tracks|length == 0 %}
-    <div class="p-12 text-center">
+    {% else %}
+    <div class="p-12 text-center bg-gray-800 rounded-lg">
         <svg class="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4">
@@ -307,7 +281,7 @@
         <p class="text-xl text-gray-400">No tracks searched yet</p>
         <p class="text-sm text-gray-500 mt-2">Upload a CSV to get started</p>
     </div>
-    {% endif %}
+    {% endfor %}
 </div>
 {% endblock %}
 
@@ -429,6 +403,9 @@
     }
 
     let progressInterval = null;
+    // autoRefreshInterval is already declared below or global
+    // let autoRefreshInterval = null; 
+    let pageLoadTime = Date.now();
 
     function startProgressPolling() {
         if (progressInterval) clearInterval(progressInterval);
@@ -443,7 +420,7 @@
                 if (status.completed) {
                     stopProgressPolling();
                     showNotification('Search completed!', 'success');
-                    setTimeout(() => location.reload(), 2000);
+                    // The auto-refresh will handle the reload for completion
                 }
             } catch (error) {
                 console.error('Progress poll error:', error);

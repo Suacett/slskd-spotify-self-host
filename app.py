@@ -44,7 +44,7 @@ DEFAULT_CONFIG = {
     'MIN_BITRATE': 192,
     'MAX_QUEUE_LENGTH': 50,
     'MIN_SPEED_KBS': 50,
-    'TOP_RESULTS_COUNT': 5,
+    'TOP_RESULTS_COUNT': 50,  # Increased to allow client-side filtering
     'MAX_FILE_SIZE_MB': 30,  # Maximum file size in MB
 }
 
@@ -97,21 +97,96 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global search state
-# Global search state
-search_state = {
-    'active': False,
-    'progress': 0,
-    'total': 0,
-    'current_item': '',  # Changed from current_artist
-    'errors': [],
-    'completed': False,
-}
-
-# Results file path
 # Results file path
 RESULTS_FILE = Path(CONFIG['DATA_DIR']) / 'search_results.json'
 WATCHLIST_FILE = Path(CONFIG['DATA_DIR']) / 'watch_list.json'
+QUEUE_FILE = Path(CONFIG['DATA_DIR']) / 'queue.json'
+STATE_FILE = Path(CONFIG['DATA_DIR']) / 'state.json'
+
+
+class QueueManager:
+    """Manages the persistent search queue"""
+    def __init__(self):
+        self.queue = []
+        self.lock = threading.RLock()
+        self.load_queue()
+
+    def load_queue(self):
+        """Load queue from disk"""
+        if QUEUE_FILE.exists():
+            try:
+                with open(QUEUE_FILE, 'r', encoding='utf-8') as f:
+                    self.queue = json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading queue: {e}")
+                self.queue = []
+
+    def save_queue(self):
+        """Save queue to disk"""
+        try:
+            with open(QUEUE_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.queue, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving queue: {e}")
+
+    def add_items(self, items: List[Dict]):
+        """Add items to queue"""
+        with self.lock:
+            # Avoid duplicates
+            current_keys = {f"{i['artist']}-{i['title']}" for i in self.queue}
+            new_items = []
+            for item in items:
+                key = f"{item['artist']}-{item['title']}"
+                if key not in current_keys:
+                    new_items.append(item)
+            
+            self.queue.extend(new_items)
+            self.save_queue()
+            return len(new_items)
+
+    def get_next(self) -> Optional[Dict]:
+        """Get next item from queue"""
+        with self.lock:
+            if self.queue:
+                item = self.queue.pop(0)
+                self.save_queue()
+                return item
+            return None
+
+    def clear(self):
+        """Clear the queue"""
+        with self.lock:
+            self.queue = []
+            self.save_queue()
+
+    def get_count(self) -> int:
+        return len(self.queue)
+
+
+def save_application_state(state: Dict):
+    """Save application state to disk"""
+    try:
+        with open(STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving state: {e}")
+
+def load_application_state() -> Dict:
+    """Load application state from disk"""
+    if STATE_FILE.exists():
+        try:
+            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading state: {e}")
+    return {
+        'active': False,
+        'progress': 0,
+        'total': 0,
+        'current_item': '',
+        'errors': [],
+        'completed': False,
+    }
 
 
 def calculate_quality_score(file_info: Dict, requested_title: str = "", musicbrainz_metadata: Optional[Dict] = None) -> float:
@@ -276,21 +351,21 @@ def passes_quality_filters(file_info: Dict) -> bool:
         logger.debug(f"[FILTER] REJECTED: {filename} - Locked")
         return False
 
-    # Queue too long
-    if queue_length > CONFIG['MAX_QUEUE_LENGTH']:
+    # Queue too long (Soft filter - handled by scoring, but reject extreme cases)
+    if queue_length > 1000: # Was CONFIG['MAX_QUEUE_LENGTH']
         logger.debug(f"[FILTER] REJECTED: {filename} - Queue too long ({queue_length})")
         return False
 
-    # Speed too slow
-    if speed_kbs < CONFIG['MIN_SPEED_KBS']:
-        logger.debug(f"[FILTER] REJECTED: {filename} - Speed too slow ({speed_kbs} KB/s)")
-        return False
+    # Speed too slow (Soft filter)
+    # if speed_kbs < CONFIG['MIN_SPEED_KBS']:
+    #     logger.debug(f"[FILTER] REJECTED: {filename} - Speed too slow ({speed_kbs} KB/s)")
+    #     return False
 
-    # Bitrate check (lossless formats bypass this)
-    if extension not in ['flac', 'wav', 'alac', 'ape']:
-        if bitrate < CONFIG['MIN_BITRATE']:
-            logger.debug(f"[FILTER] REJECTED: {filename} - Bitrate too low ({bitrate} kbps)")
-            return False
+    # Bitrate check (Soft filter)
+    # if extension not in ['flac', 'wav', 'alac', 'ape']:
+    #     if bitrate < CONFIG['MIN_BITRATE']:
+    #         logger.debug(f"[FILTER] REJECTED: {filename} - Bitrate too low ({bitrate} kbps)")
+    #         return False
 
     logger.debug(f"[FILTER] ACCEPTED: {filename} - {extension}, {bitrate}kbps, Q:{queue_length}, {speed_kbs}KB/s")
     return True
@@ -349,7 +424,8 @@ class SearchManager:
         """Create empty results structure"""
         return {
             'last_updated': None,
-            'tracks': {}  # Changed from 'artists' to 'tracks'
+            'albums': {},  # New structure: Group by Album
+            'tracks': {}   # Legacy/Fallback
         }
 
     def save_results(self):
@@ -391,38 +467,34 @@ class SearchManager:
             return True
         return False
 
-    def add_track_results(self, track_key: str, artist: str, title: str, album: str, results: List[Dict],
-                         search_id: str = "", musicbrainz_metadata: Optional[Dict] = None):
-        """Add or update results for a track with optional MusicBrainz metadata"""
-        with self.lock:
-            if 'tracks' not in self.results:
-                self.results['tracks'] = {}
-
-            track_data = {
-                'artist': artist,
-                'title': title,
-                'album': album,
-                'searched_at': datetime.now().isoformat(),
-                'result_count': len(results),
-                'reviewed': False,
-                'search_id': search_id,
-                'results': results
-            }
-
-            # Add MusicBrainz metadata if available
-            if musicbrainz_metadata:
-                track_data['musicbrainz'] = musicbrainz_metadata
-
-            self.results['tracks'][track_key] = track_data
-            self.save_results()
-
     def get_stats(self) -> Dict:
         """Calculate statistics"""
+        # Count tracks from both new 'albums' structure and legacy 'tracks'
+        total_tracks = 0
+        tracks_with_results = 0
+        reviewed_tracks = 0
+        total_files = 0
+
+        # Count from Albums
+        albums = self.results.get('albums', {})
+        for album in albums.values():
+            for track in album.get('tracks', []):
+                total_tracks += 1
+                if track.get('result_count', 0) > 0:
+                    tracks_with_results += 1
+                if track.get('reviewed', False):
+                    reviewed_tracks += 1
+                total_files += track.get('result_count', 0)
+
+        # Count from Legacy Tracks (if any)
         tracks = self.results.get('tracks', {})
-        total_tracks = len(tracks)
-        tracks_with_results = sum(1 for t in tracks.values() if t['result_count'] > 0)
-        reviewed_tracks = sum(1 for t in tracks.values() if t.get('reviewed', False))
-        total_files = sum(t['result_count'] for t in tracks.values())
+        for track in tracks.values():
+            total_tracks += 1
+            if track.get('result_count', 0) > 0:
+                tracks_with_results += 1
+            if track.get('reviewed', False):
+                reviewed_tracks += 1
+            total_files += track.get('result_count', 0)
 
         return {
             'total_tracks': total_tracks,
@@ -431,6 +503,83 @@ class SearchManager:
             'total_files': total_files,
             'last_updated': self.results.get('last_updated')
         }
+
+    def add_track_results(self, track_key: str, artist: str, title: str, album: str, results: List[Dict],
+                         search_id: str = "", musicbrainz_metadata: Optional[Dict] = None):
+        """Add or update results for a track, organized by Album"""
+        with self.lock:
+            # Normalize album name
+            album_name = album if album else "Unknown Album"
+            album_key = f"{artist} - {album_name}"
+
+            if 'albums' not in self.results:
+                self.results['albums'] = {}
+
+            if album_key not in self.results['albums']:
+                self.results['albums'][album_key] = {
+                    'name': album_name,
+                    'artist': artist,
+                    'tracks': []
+                }
+
+            # Find if track already exists in this album
+            album_data = self.results['albums'][album_key]
+            existing_track = None
+            for t in album_data['tracks']:
+                if t['title'] == title:
+                    existing_track = t
+                    break
+            
+            track_data = {
+                'artist': artist,
+                'title': title,
+                'album': album_name,
+                'searched_at': datetime.now().isoformat(),
+                'result_count': len(results),
+                'reviewed': False,
+                'search_id': search_id,
+                'results': results,
+                'key': track_key # Store key for easy lookup
+            }
+
+            if musicbrainz_metadata:
+                track_data['musicbrainz'] = musicbrainz_metadata
+
+            if existing_track:
+                # Update existing
+                existing_track.update(track_data)
+            else:
+                # Add new
+                album_data['tracks'].append(track_data)
+
+            self.save_results()
+
+    def get_all_tracks_flat(self) -> List[Dict]:
+        """Get all tracks as a flat list for display"""
+        all_tracks = []
+        
+        # Get from Albums
+        albums = self.results.get('albums', {})
+        for album in albums.values():
+            all_tracks.extend(album.get('tracks', []))
+            
+        # Get from Legacy
+        tracks = self.results.get('tracks', {})
+        all_tracks.extend(tracks.values())
+        
+        return all_tracks
+
+    def get_track_by_key(self, key: str) -> Optional[Dict]:
+        """Find a track by its unique key"""
+        # Check albums
+        albums = self.results.get('albums', {})
+        for album in albums.values():
+            for track in album.get('tracks', []):
+                if track.get('key') == key:
+                    return track
+                    
+        # Check legacy
+        return self.results.get('tracks', {}).get(key)
 
 
 class SlskdClient:
@@ -610,11 +759,15 @@ class Romanizer:
         return romaji.strip()
 
 # Initialize managers
+queue_manager = QueueManager()
 search_manager = SearchManager()
 watchlist_manager = WatchListManager()
 romanizer = Romanizer()
 musicbrainz_client = MusicBrainzClient(user_agent="slskd-spotify-self-host/1.0 (https://github.com/yourusername/slskd-spotify-self-host)")
 isrc_tracker = ISRCTracker(data_dir=CONFIG['DATA_DIR'])
+
+# Load saved state
+search_state = load_application_state()
 
 
 def parse_spotify_csv(file_path: Path) -> List[Dict]:
@@ -769,18 +922,30 @@ def search_single_item(client: SlskdClient, search_item: Dict) -> Tuple[List[Dic
         return [], ""
 
 
-def background_search_task(search_items: List[Dict]):
+def background_search_task(search_items: List[Dict] = None):
     """Background task to search for items concurrently"""
     global search_state
 
-    logger.info(f"Starting background search for {len(search_items)} items")
+    # If items provided, add to queue
+    if search_items:
+        queue_manager.add_items(search_items)
+        logger.info(f"Added {len(search_items)} items to queue")
+
+    # If already active, just return (the loop will pick up new items)
+    if search_state['active']:
+        return
+
+    logger.info("Starting background search worker")
 
     # Initialize search state
     search_state['active'] = True
-    search_state['progress'] = 0
-    search_state['total'] = len(search_items)
+    search_state['total'] = queue_manager.get_count() + search_state.get('progress', 0)
+    # Don't reset progress if resuming
+    if not search_state.get('progress'):
+        search_state['progress'] = 0
     search_state['errors'] = []
     search_state['completed'] = False
+    save_application_state(search_state)
 
     # Initialize Slskd client
     try:
@@ -794,10 +959,73 @@ def background_search_task(search_items: List[Dict]):
         search_state['errors'].append(f"Failed to connect to Slskd: {e}")
         search_state['active'] = False
         search_state['completed'] = True
+        save_application_state(search_state)
         return
 
     def process_item(item):
         if not search_state['active']:
+            return
+
+        artist = item.get('artist')
+        title = item.get('title')
+        album = item.get('album', '')
+        
+        display_name = f"{artist} - {title}"
+        search_state['current_item'] = display_name
+        save_application_state(search_state)
+
+        # Check if already searched/reviewed? (Optional optimization)
+        
+        # 1. Get Metadata (MusicBrainz)
+        mb_metadata = None
+        try:
+            mb_metadata = musicbrainz_client.search_track(artist, title, album)
+            if mb_metadata:
+                logger.info(f"Found MusicBrainz metadata for {display_name}: {mb_metadata.get('id')}")
+        except Exception as e:
+            logger.warning(f"MusicBrainz lookup failed for {display_name}: {e}")
+
+        # 2. Search Slskd
+        results, search_id = search_single_item(client, item)
+        
+        # 3. Save Results
+        key = f"{artist} - {title}"
+        search_manager.add_track_results(
+            track_key=key,
+            artist=artist,
+            title=title,
+            album=album,
+            results=results,
+            search_id=search_id,
+            musicbrainz_metadata=mb_metadata
+        )
+
+        search_state['progress'] += 1
+        save_application_state(search_state)
+
+    # Process queue
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        while True:
+            item = queue_manager.get_next()
+            if not item:
+                break
+            
+            if not search_state['active']:
+                break
+
+            try:
+                process_item(item)
+            except Exception as e:
+                logger.error(f"Error processing item {item}: {e}")
+                search_state['errors'].append(str(e))
+            
+            # Small delay between searches to be nice
+            time.sleep(1)
+
+    search_state['active'] = False
+    search_state['completed'] = True
+    save_application_state(search_state)
+    logger.info("Background search completed")
             return
 
         item_id = f"{item.get('artist', '')} - {item.get('title', '')}"
@@ -1059,24 +1287,16 @@ def index():
 
     stats = search_manager.get_stats()
 
-    # Get all tracks with their info
-    tracks = []
-    tracks_dict = search_manager.results.get('tracks', {})
-    for track_key, data in tracks_dict.items():
-        tracks.append({
-            'key': track_key,
-            'artist': data.get('artist', ''),
-            'title': data.get('title', ''),
-            'album': data.get('album', ''),
-            'result_count': data['result_count'],
-            'searched_at': data['searched_at'],
-            'reviewed': data.get('reviewed', False)
-        })
+    # Get albums for grouped display
+    albums = search_manager.results.get('albums', {})
+    
+    # Also get legacy tracks for backward compatibility or flat view if needed
+    # For now, we'll pass both and let the template decide, or migrate legacy to "Unknown Album"
+    
+    # Sort albums by artist then name
+    sorted_albums = dict(sorted(albums.items(), key=lambda item: (item[1]['artist'], item[1]['name'])))
 
-    # Sort by search date (newest first)
-    tracks.sort(key=lambda x: x['searched_at'], reverse=True)
-
-    return render_template('index.html', stats=stats, tracks=tracks, search_state=search_state, slskd_url=CONFIG['SLSKD_URL'])
+    return render_template('index.html', stats=stats, albums=sorted_albums, search_state=search_state, slskd_url=CONFIG['SLSKD_URL'])
 
 
 @app.route('/settings', methods=['GET', 'POST'])
@@ -1139,53 +1359,113 @@ def track_detail(track_key: str):
     )
 
 
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    """Handle CSV file upload"""
+@app.route('/track/<track_key>/delete', methods=['POST'])
+def delete_track(track_key):
+    """Delete a track from results and optionally re-search"""
     try:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
-
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
-
-        if not file.filename.lower().endswith('.csv'):
-            return jsonify({'error': 'Only CSV files are allowed'}), 400
-
-        # Save file
-        filename = secure_filename(file.filename)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        saved_filename = f"{timestamp}_{filename}"
-        file_path = app.config['UPLOAD_FOLDER'] / saved_filename
-        file.save(file_path)
-
-        # Parse artists
-        artists = parse_spotify_csv(file_path)
-
-        # Check which are new
-        new_items = []
-        existing_items = []
+        # Get track info before deleting if we need to re-search
+        research = request.args.get('research', 'false').lower() == 'true'
         
-        for item in artists:
-            key = f"{item.get('artist', '')} - {item.get('title', '')}" if item.get('title') else item.get('artist', '')
-            if search_manager.get_track_results(key):
-                existing_items.append(item)
+        track_data = search_manager.get_track_results(track_key)
+        artist = ""
+        title = ""
+        
+        if track_data:
+            artist = track_data.get('artist', '')
+            title = track_data.get('title', '')
+            
+        # If not in data, try to parse key
+        if not artist or not title:
+            parts = track_key.split(' - ', 1)
+            if len(parts) == 2:
+                artist, title = parts
             else:
-                new_items.append(item)
+                artist = parts[0]
 
-        return jsonify({
-            'success': True,
-            'filename': saved_filename,
-            'total_artists': len(artists),
-            'new_artists': len(new_items),
-            'existing_artists': len(existing_items),
-            'artists': artists,
-            'new_artists_list': new_items
-        })
+        # Delete from results
+        search_manager.remove_track(track_key)
+        
+        if research and artist:
+            # Add back to queue
+            queue_manager.add_items([{
+                'artist': artist,
+                'title': title,
+                'album': track_data.get('album', '') if track_data else ''
+            }])
+            
+            # Ensure search is active
+            global search_state
+            if not search_state['active']:
+                # Start background thread if not running
+                search_state['active'] = True
+                search_state['completed'] = False
+                thread = threading.Thread(target=background_search_task)
+                thread.daemon = True
+                thread.start()
+                
+            return jsonify({'success': True, 'message': 'Track deleted and re-queued'})
+
+        return jsonify({'success': True, 'message': 'Track deleted'})
 
     except Exception as e:
-        logger.error(f"Upload error: {e}")
+        logger.error(f"Delete error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/download/specific', methods=['POST'])
+def download_specific():
+    """Download a specific file from a specific user"""
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        filename = data.get('filename')
+        track_key = data.get('track_key')
+
+        if not username or not filename:
+            return jsonify({'error': 'Missing username or filename'}), 400
+
+        # Check for duplicates via ISRC if track_key provided
+        isrc = None
+        if track_key:
+            track_data = search_manager.get_track_results(track_key)
+            if track_data and 'musicbrainz' in track_data:
+                isrc = track_data['musicbrainz'].get('isrc')
+                if isrc and isrc_tracker.is_duplicate(isrc):
+                    # We allow override if user explicitly clicked download on a specific file?
+                    # Maybe just warn? But the UI disables the button if duplicate.
+                    # If they bypass, let them download.
+                    pass
+
+        # Initiate download
+        # We need a client instance. Since we are in a route, we can create one or use a global one if thread-safe.
+        # SlskdClient creates a session. It's better to create a new one or use a pool.
+        # For simplicity, create new one.
+        client = SlskdClient(
+            host=CONFIG['SLSKD_URL'],
+            api_key=CONFIG['SLSKD_API_KEY'],
+            url_base=CONFIG['SLSKD_URL_BASE']
+        )
+        
+        result = client.download_file(username, filename)
+        
+        if result:
+            # Record download
+            artist = ""
+            title = ""
+            if track_key:
+                parts = track_key.split(' - ', 1)
+                if len(parts) == 2:
+                    artist, title = parts
+                else:
+                    artist = parts[0]
+            
+            isrc_tracker.record_download(isrc, artist, title, filename, username=username)
+            return jsonify({'success': True, 'message': 'Download initiated'})
+        else:
+            return jsonify({'error': 'Failed to initiate download'}), 500
+
+    except Exception as e:
+        logger.error(f"Specific download error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
