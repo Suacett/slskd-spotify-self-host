@@ -132,8 +132,13 @@
             </div>
 
             <button id="startSearchBtn" onclick="startSearch()"
-                class="mt-4 w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all transform hover:scale-105">
-                Start Search
+                class="mt-6 w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-extrabold text-lg py-4 px-8 rounded-xl hover:from-purple-500 hover:to-blue-500 transition-all transform hover:scale-[1.02] shadow-lg flex items-center justify-center group">
+                <svg class="w-8 h-8 mr-3 group-hover:animate-bounce" fill="none" stroke="currentColor"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+                START SEARCH
             </button>
         </div>
     </div>
@@ -142,7 +147,17 @@
     <div id="progressSection" class="mt-4 hidden">
         <div class="bg-gray-700 dark:bg-gray-700 rounded-lg p-4">
             <div class="flex justify-between items-center mb-2">
-                <span class="font-semibold text-white" id="progressText">Searching...</span>
+                <span class="font-semibold text-white flex items-center animate-pulse" id="progressText">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg"
+                        fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                        </circle>
+                        <path class="opacity-75" fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                        </path>
+                    </svg>
+                    Searching...
+                </span>
                 <span class="text-gray-400" id="progressPercent">0%</span>
             </div>
             <div class="w-full bg-gray-600 rounded-full h-3 overflow-hidden">
@@ -203,7 +218,8 @@
             </thead>
             <tbody id="artistTableBody" class="bg-gray-800 dark:bg-gray-800 divide-y divide-gray-700">
                 {% for artist in artists %}
-                <tr class="hover:bg-gray-700 transition artist-row" data-reviewed="{{ artist.reviewed|lower }}">
+                <tr class="hover:bg-gray-700 transition-all duration-200 hover:scale-[1.01] artist-row animate-fade-in"
+                    style="animation-delay: {{ loop.index0 * 50 }}ms" data-reviewed="{{ artist.reviewed|lower }}">
                     <td class="px-6 py-4 whitespace-nowrap">
                         <a href="/artist/{{ artist.name|urlencode }}"
                             class="text-blue-400 hover:text-blue-300 font-medium">

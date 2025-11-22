@@ -339,8 +339,11 @@ class SlskdClient:
         # If host has path, we need to be careful
         self.base_url = f"{self.host}{self.url_base}api/v0"
         self.headers = {'X-API-Key': self.api_key}
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
         
-        logger.info(f"SlskdClient initialized with Base URL: {self.base_url}")
+        # Only log if it's a new initialization (avoid noise from health checks)
+        # logger.debug(f"SlskdClient initialized with Base URL: {self.base_url}")
 
     def _request_with_retry(self, method, url, **kwargs):
         """Helper to handle rate limits with retry"""
@@ -349,7 +352,7 @@ class SlskdClient:
         
         for i in range(max_retries + 1):
             try:
-                response = requests.request(method, url, headers=self.headers, **kwargs)
+                response = self.session.request(method, url, **kwargs)
                 
                 if response.status_code == 429:
                     if i == max_retries:
@@ -641,6 +644,9 @@ def background_search_task(search_items: List[Dict]):
         if not search_state['active']:
             return
 
+        item_id = f"{item.get('artist', '')} - {item.get('title', '')}"
+        logger.debug(f"Processing item: {item_id}")
+
         artist_str = item.get('artist', '')
         title = item.get('title', '')
         search_mode = search_state.get('mode', 'artist_title')
@@ -707,9 +713,13 @@ def background_search_task(search_items: List[Dict]):
                 search_id = search_response.get('id')
                 
                 if search_id:
+                    logger.debug(f"Search initiated for {q['query']}, ID: {search_id}. Waiting {CONFIG['SEARCH_DELAY']}s...")
                     time.sleep(CONFIG['SEARCH_DELAY'])
+                    
+                    logger.debug(f"Fetching results for {search_id}...")
                     results_response = client.get_search_results(search_id)
                     files = results_response.get('files', [])
+                    logger.debug(f"Got {len(files)} files for {search_id}")
                     
                     # Process results (similar to search_single_item)
                     all_results = []
@@ -812,6 +822,7 @@ def background_search_task(search_items: List[Dict]):
 
         # Update progress
         search_state['progress'] += 1
+        logger.debug(f"Finished processing item: {item_id}. Progress: {search_state['progress']}/{search_state['total']}")
 
     # Use ThreadPoolExecutor for concurrency (Reduced to 5 for stability)
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
