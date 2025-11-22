@@ -1373,7 +1373,7 @@ if isrc_tracker.is_duplicate(isrc):
                 return jsonify({
                     'status': 'error',
                     'message': 'Duplicate found. This song (by ISRC) has already been downloaded.',
-                    'is_duplicate': True
+                    'is_duplicate': True,
                     'original_download': duplicate_info
                 }), 409
 
