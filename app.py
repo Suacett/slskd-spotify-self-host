@@ -1347,9 +1347,15 @@ def download_track(track_key: str):
         musicbrainz_data = track_data.get('musicbrainz')
         isrc = musicbrainz_data.get('isrc') if musicbrainz_data else None
         
-        if isrc and isrc_tracker.is_duplicate(isrc):
-                'original_download': duplicate_info
-            }), 409  # 409 Conflict
+if isrc_tracker.is_duplicate(isrc):
+                duplicate_info = isrc_tracker.get_info_by_isrc(isrc)
+                logger.warning(f"Skipping download for {track_key}. Duplicate ISRC found: {isrc}. (Original: {duplicate_info.get('filename')})")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Duplicate found. This song (by ISRC) has already been downloaded.',
+                    'is_duplicate': True  # <--- Missing comma here
+                    'original_download': duplicate_info
+                }), 409
 
         # Get top result
         top_result = track_data['results'][0]
