@@ -675,8 +675,8 @@ def background_search_task(search_items: List[Dict]):
             display_name = q['display']
             search_state['current_item'] = display_name
             
-            # Jitter (Reduced for performance)
-            time.sleep(0.1)
+            # Jitter (Increased to prevent 429s)
+            time.sleep(0.5)
 
             # Check if already searched (skip only if we have results?)
             # For now, let's search all variants if not found
@@ -806,8 +806,8 @@ def background_search_task(search_items: List[Dict]):
         # Update progress
         search_state['progress'] += 1
 
-    # Use ThreadPoolExecutor for concurrency (Boosted to 20)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    # Use ThreadPoolExecutor for concurrency (Reduced to 10 for stability)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(process_item, item) for item in search_items]
         concurrent.futures.wait(futures)
 
