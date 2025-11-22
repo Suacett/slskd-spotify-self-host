@@ -202,7 +202,7 @@
 
 {% block scripts %}
 <script>
-    let uploadedArtists = [];
+    let uploadedItems = [];
 
     // File upload handling
     const dropZone = document.getElementById('dropZone');
@@ -252,13 +252,14 @@
             const data = await response.json();
 
             if (data.success) {
-                uploadedArtists = data.artists;
-                document.getElementById('totalArtists').textContent = data.total_artists;
-                document.getElementById('newArtists').textContent = data.new_artists;
-                document.getElementById('existingArtists').textContent = data.existing_artists;
+                uploadedItems = data.items;
+                const itemLabel = data.search_mode === 'artists_and_songs' ? 'items' : 'artists';
+                document.getElementById('totalArtists').textContent = data.total_items;
+                document.getElementById('newArtists').textContent = data.new_items;
+                document.getElementById('existingArtists').textContent = data.existing_items;
                 document.getElementById('uploadResults').classList.remove('hidden');
 
-                showNotification(`Parsed ${data.total_artists} artists from CSV`, 'success');
+                showNotification(`Parsed ${data.total_items} ${itemLabel} from CSV`, 'success');
             } else {
                 showNotification(data.error || 'Upload failed', 'error');
             }
@@ -269,8 +270,8 @@
     }
 
     async function startSearch() {
-        if (uploadedArtists.length === 0) {
-            showNotification('No artists to search', 'error');
+        if (uploadedItems.length === 0) {
+            showNotification('No items to search', 'error');
             return;
         }
 
@@ -278,7 +279,7 @@
             const response = await fetch('/search/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ artists: uploadedArtists })
+                body: JSON.stringify({ items: uploadedItems })
             });
 
             const data = await response.json();
@@ -302,6 +303,12 @@
             await fetch('/search/cancel', { method: 'POST' });
             showNotification('Search cancelled', 'info');
             stopProgressPolling();
+            // Hide progress section and reload page after a brief delay
+            setTimeout(() => {
+                document.getElementById('progressSection').classList.add('hidden');
+                document.getElementById('startSearchBtn').disabled = false;
+                location.reload();
+            }, 1500);
         } catch (error) {
             console.error('Cancel error:', error);
         }

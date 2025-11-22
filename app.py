@@ -11,15 +11,14 @@ import json
 import time
 import logging
 import threading
+import requests
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from io import StringIO
+from io import StringIO, BytesIO
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
 from werkzeug.utils import secure_filename
-from slskd_api import SlskdClient
-from slskd_api.exceptions import SlskdException
 
 # Configuration file path
 CONFIG_FILE = Path(os.getenv('DATA_DIR', '/app/data')) / 'config.json'
@@ -39,6 +38,8 @@ DEFAULT_CONFIG = {
     'MAX_QUEUE_LENGTH': 50,
     'MIN_SPEED_KBS': 50,
     'TOP_RESULTS_COUNT': 5,
+    # Search Mode: 'artists_only' or 'artists_and_songs'
+    'SEARCH_MODE': 'artists_only',
 }
 
 # Load configuration from file or environment
@@ -98,10 +99,19 @@ search_state = {
     'current_artist': '',
     'errors': [],
     'completed': False,
+    'cancelled': False,
 }
 
 # Results file path
 RESULTS_FILE = Path(CONFIG['DATA_DIR']) / 'search_results.json'
+
+
+def get_slskd_headers() -> Dict[str, str]:
+    """Get headers for Slskd API requests"""
+    return {
+        'X-API-Key': CONFIG['SLSKD_API_KEY'],
+        'Content-Type': 'application/json'
+    }
 
 
 def calculate_quality_score(file_info: Dict) -> float:
@@ -310,9 +320,15 @@ class SearchManager:
 search_manager = SearchManager()
 
 
-def parse_spotify_csv(file_path: Path) -> List[str]:
-    """Parse Spotify CSV and extract unique artist names"""
-    artists = set()
+def parse_spotify_csv(file_path: Path) -> List[Dict[str, str]]:
+    """
+    Parse Spotify CSV and extract unique items (artists or artists+songs).
+
+    Returns:
+        List of dicts with 'type' ('artist' or 'song'), 'artist', and optionally 'title'
+    """
+    items = []
+    artists_seen = set()
 
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -322,13 +338,13 @@ def parse_spotify_csv(file_path: Path) -> List[str]:
         sniffer = csv.Sniffer()
         try:
             dialect = sniffer.sniff(content[:1024])
-            has_header = sniffer.has_header(content[:1024])
         except:
             dialect = 'excel'
-            has_header = True
 
         # Parse CSV
         reader = csv.DictReader(StringIO(content), dialect=dialect)
+
+        search_mode = CONFIG.get('SEARCH_MODE', 'artists_only')
 
         for row in reader:
             # Try different common column names for artists
@@ -338,20 +354,55 @@ def parse_spotify_csv(file_path: Path) -> List[str]:
                     artist = row[col_name].strip()
                     break
 
-            if artist:
-                artists.add(artist)
+            if not artist:
+                continue
 
-        logger.info(f"Parsed {len(artists)} unique artists from CSV")
-        return sorted(list(artists))
+            if search_mode == 'artists_and_songs':
+                # Get song title
+                title = None
+                for col_name in ['Title', 'title', 'Song', 'song', 'Track', 'track']:
+                    if col_name in row and row[col_name]:
+                        title = row[col_name].strip()
+                        break
+
+                if title:
+                    # Add artist + title search
+                    items.append({
+                        'type': 'song',
+                        'artist': artist,
+                        'title': title,
+                        'search_query': f"{artist} {title}"
+                    })
+                else:
+                    # No title, just add artist if not seen before
+                    if artist not in artists_seen:
+                        items.append({
+                            'type': 'artist',
+                            'artist': artist,
+                            'search_query': artist
+                        })
+                        artists_seen.add(artist)
+            else:
+                # Artists only mode
+                if artist not in artists_seen:
+                    items.append({
+                        'type': 'artist',
+                        'artist': artist,
+                        'search_query': artist
+                    })
+                    artists_seen.add(artist)
+
+        logger.info(f"Parsed {len(items)} items from CSV (mode: {search_mode})")
+        return items
 
     except Exception as e:
         logger.error(f"Error parsing CSV: {e}")
         raise
 
 
-def search_artist_on_slskd(client: SlskdClient, artist_name: str) -> Tuple[List[Dict], str]:
+def search_artist_on_slskd(artist_name: str) -> Tuple[List[Dict], str]:
     """
-    Search for an artist on Slskd and return results with quality scoring
+    Search for an artist on Slskd using direct API calls and return results with quality scoring.
 
     Returns:
         Tuple of (top quality results list, search_id)
@@ -359,57 +410,77 @@ def search_artist_on_slskd(client: SlskdClient, artist_name: str) -> Tuple[List[
     try:
         logger.info(f"Searching for artist: {artist_name}")
 
-        # Perform search with timeout
-        search_response = client.searches.search_text(
-            search_text=artist_name,
-            timeout=CONFIG['SEARCH_TIMEOUT']
-        )
+        # Create search request
+        api_url = f"{CONFIG['SLSKD_URL']}/api/v0/searches"
+        headers = get_slskd_headers()
+        payload = {
+            'searchText': artist_name,
+            'searchTimeout': CONFIG['SEARCH_TIMEOUT'] * 1000  # Convert to milliseconds
+        }
 
-        # Wait a bit for results to accumulate
+        # POST search request
+        response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        search_data = response.json()
+        search_id = search_data.get('id', '')
+
+        if not search_id:
+            logger.error(f"No search ID returned for {artist_name}")
+            return [], ""
+
+        # Wait for results to accumulate
         time.sleep(5)
 
-        # Get search results
-        search_id = search_response.get('id', '')
+        # Poll for completed search results
+        max_polls = 10
+        for poll in range(max_polls):
+            result_url = f"{CONFIG['SLSKD_URL']}/api/v0/searches/{search_id}?includeResponses=true"
+            result_response = requests.get(result_url, headers=headers, timeout=30)
+            result_response.raise_for_status()
+            result_data = result_response.json()
 
-        # Fetch the actual results
-        try:
-            results_response = client.searches.search_by_id(search_id)
-            files = results_response.get('files', [])
-        except:
-            files = []
+            state = result_data.get('state', '')
+            if state == 'Completed' or poll == max_polls - 1:
+                break
 
-        # Parse and format results
+            time.sleep(1)
+
+        # Parse responses and files
         all_results = []
-        for file_info in files:
-            try:
-                # Extract file information
-                filename = file_info.get('filename', '')
-                size = file_info.get('size', 0)
-                username = file_info.get('username', 'Unknown')
+        responses = result_data.get('responses', [])
 
-                # Quality metrics
-                extension = Path(filename).suffix.lower().replace('.', '')
-                bitrate = file_info.get('bitRate', 0)
-                queue_length = file_info.get('queueLength', 0)
-                upload_speed = file_info.get('uploadSpeed', 0)  # in bytes/sec
-                speed_kbs = upload_speed / 1024 if upload_speed else 0
-                has_free_slot = file_info.get('hasFreeUploadSlot', False)
-                is_locked = file_info.get('isLocked', False)
+        for response_item in responses:
+            files = response_item.get('files', [])
+            username = response_item.get('username', 'Unknown')
+            upload_speed = response_item.get('uploadSpeed', 0)
+            queue_length = response_item.get('queueLength', 0)
+            has_free_slot = response_item.get('hasFreeUploadSlot', False)
+            is_locked = response_item.get('lockedFileList', False)
 
-                all_results.append({
-                    'username': username,
-                    'filename': filename,
-                    'size': size,
-                    'bitrate': bitrate,
-                    'extension': extension,
-                    'queue_length': queue_length,
-                    'speed_kbs': speed_kbs,
-                    'has_free_slot': has_free_slot,
-                    'is_locked': is_locked,
-                })
-            except Exception as e:
-                logger.warning(f"Error parsing file info: {e}")
-                continue
+            for file_info in files:
+                try:
+                    filename = file_info.get('filename', '')
+                    size = file_info.get('size', 0)
+
+                    # Quality metrics
+                    extension = Path(filename).suffix.lower().replace('.', '')
+                    bitrate = file_info.get('bitRate', 0) // 1000 if file_info.get('bitRate') else 0  # Convert to kbps
+                    speed_kbs = upload_speed / 1024 if upload_speed else 0
+
+                    all_results.append({
+                        'username': username,
+                        'filename': filename,
+                        'size': size,
+                        'bitrate': bitrate,
+                        'extension': extension,
+                        'queue_length': queue_length,
+                        'speed_kbs': speed_kbs,
+                        'has_free_slot': has_free_slot,
+                        'is_locked': is_locked,
+                    })
+                except Exception as e:
+                    logger.warning(f"Error parsing file info: {e}")
+                    continue
 
         # Apply smart quality filtering and ranking
         top_results = rank_and_filter_results(all_results)
@@ -417,78 +488,68 @@ def search_artist_on_slskd(client: SlskdClient, artist_name: str) -> Tuple[List[
         logger.info(f"Found {len(all_results)} total results, filtered to top {len(top_results)} for {artist_name}")
         return top_results, search_id
 
-    except SlskdException as e:
-        logger.error(f"Slskd API error searching for {artist_name}: {e}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API request error searching for {artist_name}: {e}")
         return [], ""
     except Exception as e:
         logger.error(f"Unexpected error searching for {artist_name}: {e}")
         return [], ""
 
 
-def background_search_task(artists: List[str]):
-    """Background task to search for artists"""
+def background_search_task(items: List[Dict[str, str]]):
+    """Background task to search for items (artists or songs)"""
     global search_state
 
-    logger.info(f"Starting background search for {len(artists)} artists")
+    logger.info(f"Starting background search for {len(items)} items")
 
     # Initialize search state
     search_state['active'] = True
     search_state['progress'] = 0
-    search_state['total'] = len(artists)
+    search_state['total'] = len(items)
     search_state['errors'] = []
     search_state['completed'] = False
+    search_state['cancelled'] = False
 
-    # Initialize Slskd client
-    try:
-        client = SlskdClient(
-            host=CONFIG['SLSKD_URL'],
-            api_key=CONFIG['SLSKD_API_KEY'],
-            url_base=CONFIG['SLSKD_URL_BASE']
-        )
-        logger.info("Slskd client initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize Slskd client: {e}")
-        search_state['errors'].append(f"Failed to connect to Slskd: {e}")
-        search_state['active'] = False
-        search_state['completed'] = True
-        return
-
-    # Search each artist
-    for i, artist in enumerate(artists):
+    # Search each item
+    for i, item in enumerate(items):
         if not search_state['active']:
             logger.info("Search cancelled by user")
+            search_state['cancelled'] = True
             break
 
-        search_state['current_artist'] = artist
+        search_query = item['search_query']
+        display_name = f"{item['artist']} - {item.get('title', '')}" if item.get('title') else item['artist']
+
+        search_state['current_artist'] = display_name
         search_state['progress'] = i
 
         # Skip if already searched
-        if search_manager.get_artist_results(artist):
-            logger.info(f"Skipping already searched artist: {artist}")
+        if search_manager.get_artist_results(display_name):
+            logger.info(f"Skipping already searched item: {display_name}")
             continue
 
         # Search with retries
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                results, search_id = search_artist_on_slskd(client, artist)
-                search_manager.add_artist_results(artist, results, search_id)
+                results, search_id = search_artist_on_slskd(search_query)
+                search_manager.add_artist_results(display_name, results, search_id)
 
                 if len(results) == 0:
-                    search_state['errors'].append(f"No quality results found for: {artist}")
+                    search_state['errors'].append(f"No quality results found for: {display_name}")
 
                 break  # Success
             except Exception as e:
                 if attempt < max_retries - 1:
                     wait_time = 2 ** attempt  # Exponential backoff
-                    logger.warning(f"Retry {attempt + 1}/{max_retries} for {artist} after {wait_time}s")
+                    logger.warning(f"Retry {attempt + 1}/{max_retries} for {display_name} after {wait_time}s")
                     time.sleep(wait_time)
                 else:
-                    logger.error(f"Failed to search {artist} after {max_retries} attempts: {e}")
-                    search_state['errors'].append(f"Failed to search {artist}: {e}")
+                    logger.error(f"Failed to search {display_name} after {max_retries} attempts: {e}")
+                    search_state['errors'].append(f"Failed to search {display_name}: {e}")
 
         # Delay between searches
-        if i < len(artists) - 1:
+        if i < len(items) - 1 and search_state['active']:
             time.sleep(CONFIG['SEARCH_DELAY'])
 
     # Mark as completed
@@ -522,7 +583,7 @@ def index():
     # Sort by search date (newest first)
     artists.sort(key=lambda x: x['searched_at'], reverse=True)
 
-    return render_template('index.html', stats=stats, artists=artists, search_state=search_state)
+    return render_template('index.html', stats=stats, artists=artists, search_state=search_state, config=CONFIG)
 
 
 @app.route('/settings', methods=['GET', 'POST'])
@@ -536,6 +597,7 @@ def settings():
         new_config['SLSKD_USERNAME'] = request.form.get('slskd_username', '')
         new_config['SLSKD_PASSWORD'] = request.form.get('slskd_password', '')
         new_config['SLSKD_URL_BASE'] = request.form.get('slskd_url_base', CONFIG['SLSKD_URL_BASE'])
+        new_config['SEARCH_MODE'] = request.form.get('search_mode', CONFIG.get('SEARCH_MODE', 'artists_only'))
 
         # Parse numeric values
         try:
@@ -558,7 +620,7 @@ def settings():
     return render_template('settings.html', config=CONFIG)
 
 
-@app.route('/artist/<artist_name>')
+@app.route('/artist/<path:artist_name>')
 def artist_detail(artist_name: str):
     """Artist detail page showing top quality search results"""
     artist_data = search_manager.get_artist_results(artist_name)
@@ -595,21 +657,29 @@ def upload_file():
         file_path = app.config['UPLOAD_FOLDER'] / saved_filename
         file.save(file_path)
 
-        # Parse artists
-        artists = parse_spotify_csv(file_path)
+        # Parse items
+        items = parse_spotify_csv(file_path)
 
         # Check which are new
-        new_artists = [a for a in artists if not search_manager.get_artist_results(a)]
-        existing_artists = [a for a in artists if search_manager.get_artist_results(a)]
+        new_items = []
+        existing_items = []
+
+        for item in items:
+            display_name = f"{item['artist']} - {item.get('title', '')}" if item.get('title') else item['artist']
+            if search_manager.get_artist_results(display_name):
+                existing_items.append(item)
+            else:
+                new_items.append(item)
 
         return jsonify({
             'success': True,
             'filename': saved_filename,
-            'total_artists': len(artists),
-            'new_artists': len(new_artists),
-            'existing_artists': len(existing_artists),
-            'artists': artists,
-            'new_artists_list': new_artists
+            'total_items': len(items),
+            'new_items': len(new_items),
+            'existing_items': len(existing_items),
+            'items': items,
+            'new_items_list': new_items,
+            'search_mode': CONFIG.get('SEARCH_MODE', 'artists_only')
         })
 
     except Exception as e:
@@ -627,28 +697,33 @@ def start_search():
 
     try:
         data = request.get_json()
-        artists = data.get('artists', [])
+        items = data.get('items', [])
 
-        if not artists:
-            return jsonify({'error': 'No artists provided'}), 400
+        if not items:
+            return jsonify({'error': 'No items provided'}), 400
 
-        # Filter out already searched artists unless force is specified
+        # Filter out already searched items unless force is specified
         force = data.get('force', False)
         if not force:
-            artists = [a for a in artists if not search_manager.get_artist_results(a)]
+            filtered_items = []
+            for item in items:
+                display_name = f"{item['artist']} - {item.get('title', '')}" if item.get('title') else item['artist']
+                if not search_manager.get_artist_results(display_name):
+                    filtered_items.append(item)
+            items = filtered_items
 
-        if not artists:
-            return jsonify({'message': 'All artists already searched', 'count': 0}), 200
+        if not items:
+            return jsonify({'message': 'All items already searched', 'count': 0}), 200
 
         # Start background thread
-        thread = threading.Thread(target=background_search_task, args=(artists,))
+        thread = threading.Thread(target=background_search_task, args=(items,))
         thread.daemon = True
         thread.start()
 
         return jsonify({
             'success': True,
-            'message': f'Started search for {len(artists)} artists',
-            'count': len(artists)
+            'message': f'Started search for {len(items)} items',
+            'count': len(items)
         })
 
     except Exception as e:
@@ -667,10 +742,11 @@ def cancel_search():
     """Cancel ongoing search"""
     global search_state
     search_state['active'] = False
-    return jsonify({'success': True})
+    search_state['cancelled'] = True
+    return jsonify({'success': True, 'cancelled': True})
 
 
-@app.route('/api/mark_reviewed/<artist_name>', methods=['POST'])
+@app.route('/api/mark_reviewed/<path:artist_name>', methods=['POST'])
 def mark_reviewed(artist_name: str):
     """Mark an artist as reviewed"""
     success = search_manager.mark_reviewed(artist_name)
@@ -685,7 +761,7 @@ def get_stats():
     return jsonify(search_manager.get_stats())
 
 
-@app.route('/artist/<artist_name>/delete', methods=['POST'])
+@app.route('/artist/<path:artist_name>/delete', methods=['POST'])
 def delete_artist(artist_name: str):
     """Delete an artist to allow re-searching"""
     success = search_manager.delete_artist(artist_name)
@@ -698,8 +774,12 @@ def delete_artist(artist_name: str):
 def export_csv():
     """Export all results to CSV"""
     try:
-        output = StringIO()
-        writer = csv.writer(output)
+        # Use BytesIO for binary mode
+        output = BytesIO()
+
+        # Write CSV to string first
+        string_output = StringIO()
+        writer = csv.writer(string_output)
 
         # Write header
         writer.writerow(['Artist', 'Username', 'Filename', 'Size (MB)', 'Bitrate', 'Extension',
@@ -722,13 +802,15 @@ def export_csv():
                     reviewed
                 ])
 
-        # Create response
+        # Convert string to bytes
+        output.write(string_output.getvalue().encode('utf-8'))
         output.seek(0)
+
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f'slskd_search_results_{timestamp}.csv'
 
         return send_file(
-            StringIO(output.getvalue()),
+            output,
             mimetype='text/csv',
             as_attachment=True,
             download_name=filename
@@ -753,20 +835,19 @@ def health_check():
     try:
         # Test Slskd connection if configured
         if CONFIG.get('SLSKD_API_KEY'):
-            client = SlskdClient(
-                host=CONFIG['SLSKD_URL'],
-                api_key=CONFIG['SLSKD_API_KEY'],
-                url_base=CONFIG['SLSKD_URL_BASE']
-            )
+            api_url = f"{CONFIG['SLSKD_URL']}/api/v0/application"
+            headers = get_slskd_headers()
 
-            # Try to get server state
-            state = client.application.state()
+            response = requests.get(api_url, headers=headers, timeout=5)
+            response.raise_for_status()
+            state_data = response.json()
 
             return jsonify({
                 'status': 'healthy',
                 'slskd_connected': True,
-                'slskd_state': state.get('state', 'unknown'),
-                'smart_filtering': True
+                'slskd_state': state_data.get('state', 'unknown'),
+                'smart_filtering': True,
+                'search_mode': CONFIG.get('SEARCH_MODE', 'artists_only')
             })
         else:
             return jsonify({
@@ -792,6 +873,7 @@ if __name__ == '__main__':
     logger.info(f"Data directory: {CONFIG['DATA_DIR']}")
     logger.info(f"Search timeout: {CONFIG['SEARCH_TIMEOUT']}s")
     logger.info(f"Search delay: {CONFIG['SEARCH_DELAY']}s")
+    logger.info(f"Search mode: {CONFIG.get('SEARCH_MODE', 'artists_only')}")
     logger.info(f"Min bitrate: {CONFIG['MIN_BITRATE']} kbps")
     logger.info(f"Max queue: {CONFIG['MAX_QUEUE_LENGTH']}")
     logger.info(f"Min speed: {CONFIG['MIN_SPEED_KBS']} KB/s")

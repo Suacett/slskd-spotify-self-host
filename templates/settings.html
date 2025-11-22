@@ -70,19 +70,39 @@
                     Search Settings
                 </h2>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-4">
+                    <!-- Search Mode -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Search Timeout (seconds)</label>
-                        <input type="number" name="search_timeout" value="{{ config.SEARCH_TIMEOUT }}" min="5" max="60"
-                            class="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500">
-                        <p class="text-xs text-gray-400 mt-1">How long to wait for search results</p>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Search Mode</label>
+                        <select name="search_mode" class="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500">
+                            <option value="artists_only" {% if config.get('SEARCH_MODE', 'artists_only') == 'artists_only' %}selected{% endif %}>
+                                Artists Only - Search for unique artists
+                            </option>
+                            <option value="artists_and_songs" {% if config.get('SEARCH_MODE', 'artists_only') == 'artists_and_songs' %}selected{% endif %}>
+                                Artists + Songs - Search for each song (Artist + Title)
+                            </option>
+                        </select>
+                        <p class="text-xs text-gray-400 mt-1">
+                            <strong>Artists Only:</strong> Searches once per unique artist<br>
+                            <strong>Artists + Songs:</strong> Searches for "Artist Song" for each track (more accurate but slower)
+                        </p>
                     </div>
 
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Search Delay (seconds)</label>
-                        <input type="number" name="search_delay" value="{{ config.SEARCH_DELAY }}" min="1" max="10"
-                            class="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500">
-                        <p class="text-xs text-gray-400 mt-1">Delay between artist searches</p>
+                    <!-- Timeout and Delay -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Search Timeout (seconds)</label>
+                            <input type="number" name="search_timeout" value="{{ config.SEARCH_TIMEOUT }}" min="5" max="60"
+                                class="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500">
+                            <p class="text-xs text-gray-400 mt-1">How long to wait for search results</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Search Delay (seconds)</label>
+                            <input type="number" name="search_delay" value="{{ config.SEARCH_DELAY }}" min="1" max="10"
+                                class="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500">
+                            <p class="text-xs text-gray-400 mt-1">Delay between searches</p>
+                        </div>
                     </div>
                 </div>
             </div>
