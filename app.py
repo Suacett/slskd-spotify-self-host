@@ -21,6 +21,7 @@ from werkzeug.utils import secure_filename
 import requests
 import difflib
 import concurrent.futures
+import pykakasi
 from urllib.parse import quote
 
 # Configuration file path
@@ -318,11 +319,21 @@ class SlskdClient:
     def __init__(self, host, api_key, url_base='/'):
         self.host = host.rstrip('/')
         self.api_key = api_key
-        self.url_base = url_base if url_base.startswith('/') else '/' + url_base
-        if not self.url_base.endswith('/'):
-            self.url_base += '/'
+        
+        # Clean up URL base
+        url_base = url_base.strip()
+        if not url_base.startswith('/'):
+            url_base = '/' + url_base
+        if not url_base.endswith('/'):
+            url_base += '/'
+        self.url_base = url_base
+        
+        # Construct base URL carefully to avoid double slashes
+        # If host has path, we need to be careful
         self.base_url = f"{self.host}{self.url_base}api/v1"
         self.headers = {'X-API-Key': self.api_key}
+        
+        logger.info(f"SlskdClient initialized with Base URL: {self.base_url}")
 
     def search(self, query, timeout=15):
         """Initiate a search"""
@@ -334,7 +345,7 @@ class SlskdClient:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            logger.error(f"Search init failed: {e}")
+            logger.error(f"Search init failed for {url}: {e}")
             raise
 
     def get_search_results(self, search_id):
@@ -409,9 +420,24 @@ class WatchListManager:
         pass
 
 
+class Romanizer:
+    """Handles Japanese to Romaji conversion"""
+    def __init__(self):
+        self.kks = pykakasi.kakasi()
+        
+    def to_romaji(self, text: str) -> str:
+        """Convert text to Romaji if it contains Japanese"""
+        if not text:
+            return ""
+            
+        result = self.kks.convert(text)
+        romaji = " ".join([item['hepburn'] for item in result])
+        return romaji.strip()
+
 # Initialize managers
 search_manager = SearchManager()
 watchlist_manager = WatchListManager()
+romanizer = Romanizer()
 
 
 def parse_spotify_csv(file_path: Path) -> List[Dict]:
@@ -584,26 +610,154 @@ def background_search_task(search_items: List[Dict]):
 
         artist = item.get('artist', '')
         title = item.get('title', '')
-        display_name = f"{artist} - {title}" if title else artist
+        search_mode = search_state.get('mode', 'artist_title')
         
-        search_state['current_item'] = display_name
+        # Determine search queries based on mode
+        queries = []
         
-        # Jitter to prevent rate limiting
-        time.sleep(0.5)
+        if search_mode == 'artist_only':
+            queries.append({'query': artist, 'display': artist, 'type': 'original'})
+            # Add Romaji variant if different
+            romaji_artist = romanizer.to_romaji(artist)
+            if romaji_artist and romaji_artist != artist:
+                queries.append({'query': romaji_artist, 'display': f"{artist} ({romaji_artist})", 'type': 'romaji'})
+                
+        else: # artist_title
+            if title:
+                queries.append({'query': f"{artist} {title}", 'display': f"{artist} - {title}", 'type': 'original'})
+                # Add Romaji variant
+                romaji_artist = romanizer.to_romaji(artist)
+                romaji_title = romanizer.to_romaji(title)
+                if (romaji_artist and romaji_artist != artist) or (romaji_title and romaji_title != title):
+                    # Try mixed combinations? For now just full romaji
+                    r_artist = romaji_artist if romaji_artist else artist
+                    r_title = romaji_title if romaji_title else title
+                    queries.append({'query': f"{r_artist} {r_title}", 'display': f"{artist} - {title} (Romaji)", 'type': 'romaji'})
+            else:
+                queries.append({'query': artist, 'display': artist, 'type': 'original'})
 
-        # Check if already searched
-        if search_manager.get_artist_results(display_name):
-            logger.info(f"Skipping already searched: {display_name}")
-            return
+        for q in queries:
+            if not search_state['active']:
+                return
 
-        # Search
-        results, search_id = search_single_item(client, item)
-        
-        if results:
-            search_manager.add_artist_results(display_name, results, search_id)
+            display_name = q['display']
+            search_state['current_item'] = display_name
             
-            # Check for watch list candidates (Top result has queue)
-            top_result = results[0]
+            # Jitter
+            time.sleep(0.5)
+
+            # Check if already searched (skip only if we have results?)
+            # For now, let's search all variants if not found
+            
+            # Search
+            # Create a temp item for search_single_item to use
+            # We need to bypass the query construction in search_single_item or modify it
+            # Let's modify search_single_item to accept a direct query or handle this better.
+            # Actually, let's just call client.search directly here or adapt search_single_item.
+            
+            # Refactor search_single_item to take a query string directly?
+            # Or just pass the query as 'artist' and empty title to trick it?
+            # Better: Update search_single_item to accept optional override query.
+            
+            # Let's just do the search here to avoid breaking search_single_item signature too much
+            # or update search_single_item.
+            
+            try:
+                logger.info(f"Searching for: {q['query']}")
+                search_response = client.search(q['query'])
+                search_id = search_response.get('id')
+                
+                if search_id:
+                    time.sleep(CONFIG['SEARCH_DELAY'])
+                    results_response = client.get_search_results(search_id)
+                    files = results_response.get('files', [])
+                    
+                    # Process results (similar to search_single_item)
+                    all_results = []
+                    for file_info in files:
+                        try:
+                            filename = file_info.get('filename', '')
+                            size = file_info.get('size', 0)
+                            username = file_info.get('username', 'Unknown')
+                            extension = Path(filename).suffix.lower().replace('.', '')
+                            bitrate = file_info.get('bitRate', 0)
+                            queue_length = file_info.get('queueLength', 0)
+                            upload_speed = file_info.get('uploadSpeed', 0)
+                            speed_kbs = upload_speed / 1024 if upload_speed else 0
+                            has_free_slot = file_info.get('hasFreeUploadSlot', False)
+                            is_locked = file_info.get('isLocked', False)
+
+                            result_dict = {
+                                'username': username,
+                                'filename': filename,
+                                'size': size,
+                                'bitrate': bitrate,
+                                'extension': extension,
+                                'queue_length': queue_length,
+                                'speed_kbs': speed_kbs,
+                                'has_free_slot': has_free_slot,
+                                'is_locked': is_locked,
+                                'requested_title': title if title else artist # For fuzzy match
+                            }
+                            all_results.append(result_dict)
+                        except:
+                            continue
+
+                    top_results = rank_and_filter_results(all_results)
+                    
+                    if top_results:
+                        # Store results under the original display name (Artist - Title)
+                        # so they show up together? Or separate?
+                        # User wants to see results.
+                        # If we search Romaji, we should probably merge results into the main item?
+                        # For simplicity, let's add them to the main item key.
+                        main_key = f"{artist} - {title}" if title else artist
+                        
+                        # We need to merge with existing if any
+                        existing = search_manager.get_artist_results(main_key)
+                        if existing:
+                            # Merge logic could be complex. 
+                            # For now, let's just add them.
+                            # But search_manager.add_artist_results overwrites.
+                            # We should probably fetch, merge, save.
+                            # But wait, add_artist_results overwrites.
+                            # Let's just save it under the main key. 
+                            # If we have multiple queries for one item, we should collect all results first.
+                            pass
+                        
+                        # Collect all results for this item across queries
+                        if 'collected_results' not in item:
+                            item['collected_results'] = []
+                        item['collected_results'].extend(top_results)
+                        
+                else:
+                    logger.error(f"No search ID for {q['query']}")
+                    
+            except Exception as e:
+                logger.error(f"Error searching {q['query']}: {e}")
+
+        # After all queries for this item, save results
+        main_key = f"{artist} - {title}" if title else artist
+        final_results = item.get('collected_results', [])
+        
+        # Deduplicate based on filename + username
+        unique_results = []
+        seen = set()
+        for r in final_results:
+            key = f"{r['username']}_{r['filename']}"
+            if key not in seen:
+                seen.add(key)
+                unique_results.append(r)
+        
+        # Re-rank
+        unique_results.sort(key=lambda x: x['quality_score'], reverse=True)
+        unique_results = unique_results[:CONFIG['TOP_RESULTS_COUNT']]
+        
+        if unique_results:
+            search_manager.add_artist_results(main_key, unique_results, "")
+            
+            # Watchlist check
+            top_result = unique_results[0]
             if top_result.get('queue_length', 0) > 0:
                 watchlist_manager.add_to_watchlist({
                     'artist': artist,
@@ -613,11 +767,9 @@ def background_search_task(search_items: List[Dict]):
                     'size': top_result['size'],
                     'bitrate': top_result['bitrate']
                 })
-                
         else:
-            search_state['errors'].append(f"No results for: {display_name}")
-            # Add empty result to track it was searched
-            search_manager.add_artist_results(display_name, [], search_id)
+             search_state['errors'].append(f"No results for: {main_key}")
+             search_manager.add_artist_results(main_key, [], "")
 
         # Update progress
         search_state['progress'] += 1
@@ -776,6 +928,11 @@ def start_search():
 
         # Filter out already searched items
         force = data.get('force', False)
+        search_mode = data.get('mode', 'artist_title')
+        
+        # Set search mode in state
+        search_state['mode'] = search_mode
+        
         if not force:
             # Check if "Artist - Title" exists in results
             filtered_artists = []

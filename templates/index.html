@@ -116,6 +116,21 @@
                     <span class="text-yellow-400 font-bold ml-2" id="existingArtists">0</span>
                 </div>
             </div>
+            <div class="mt-4">
+                <label class="block text-sm font-medium text-gray-300 mb-2">Search Mode</label>
+                <div class="flex space-x-4">
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="searchMode" value="artist_title" checked
+                            class="form-radio text-purple-600">
+                        <span class="ml-2 text-white">Artist + Title (Best Precision)</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="searchMode" value="artist_only" class="form-radio text-purple-600">
+                        <span class="ml-2 text-white">Artist Only (More Results)</span>
+                    </label>
+                </div>
+            </div>
+
             <button id="startSearchBtn" onclick="startSearch()"
                 class="mt-4 w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all transform hover:scale-105">
                 Start Search
@@ -316,10 +331,15 @@
         }
 
         try {
+            const searchMode = document.querySelector('input[name="searchMode"]:checked').value;
+
             const response = await fetch('/search/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ artists: uploadedArtists })
+                body: JSON.stringify({
+                    artists: uploadedArtists,
+                    mode: searchMode
+                })
             });
 
             const data = await response.json();
@@ -343,6 +363,10 @@
             await fetch('/search/cancel', { method: 'POST' });
             showNotification('Search cancelled', 'info');
             stopProgressPolling();
+            document.getElementById('progressSection').classList.add('hidden');
+            document.getElementById('startSearchBtn').disabled = false;
+            document.getElementById('progressText').textContent = 'Cancelled';
+            document.getElementById('progressBar').style.width = '0%';
         } catch (error) {
             console.error('Cancel error:', error);
         }
@@ -482,11 +506,14 @@
 
         const searchItem = { artist: artist, title: title };
 
+        // Determine mode based on input
+        const mode = title ? 'artist_title' : 'artist_only';
+
         try {
             const response = await fetch('/search/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ artists: [searchItem], force: true })
+                body: JSON.stringify({ artists: [searchItem], force: true, mode: mode })
             });
 
             const data = await response.json();
