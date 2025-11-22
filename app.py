@@ -153,6 +153,18 @@ def calculate_quality_score(file_info: Dict, requested_title: str = "", musicbra
         elif ratio < 0.4:
             score -= 100  # Irrelevant result
 
+    # NEW: Album Verification (if MusicBrainz data available)
+    if musicbrainz_metadata and musicbrainz_metadata.get('album'):
+        official_album = musicbrainz_metadata['album'].lower()
+        # Check if album name is in the file path (Slskd often returns full path)
+        # We don't have full path in file_info usually, just filename. 
+        # But sometimes 'directory' or similar field exists. 
+        # Assuming filename might contain album or we just skip if not available.
+        # Actually, Slskd search results often don't have directory unless we ask for it.
+        # Let's check filename for now.
+        if official_album in filename.lower():
+            score += 30
+
     # 2. Duration Verification (MusicBrainz)
     if musicbrainz_metadata and musicbrainz_metadata.get('duration_ms'):
         mb_duration_seconds = musicbrainz_metadata['duration_ms'] / 1000.0
@@ -797,28 +809,20 @@ def background_search_task(search_items: List[Dict]):
         search_mode = search_state.get('mode', 'artist_title')
 
         # STEP 1: Query MusicBrainz for canonical metadata
-        musicbrainz_metadata = None
-        if title:  # Only query MusicBrainz if we have a specific track
+        mb_metadata = None
+        if title:
             try:
-                logger.info(f"[MUSICBRAINZ] Querying metadata for: {artist_str} - {title}")
-                musicbrainz_metadata = musicbrainz_client.search_recording(
-                    artist=artist_str,
-                    title=title,
-                    album=album if album else None
-                )
-
-                if musicbrainz_metadata:
-                    logger.info(f"[MUSICBRAINZ] ✓ Found metadata: ISRC={musicbrainz_metadata.get('isrc')}, "
-                              f"Duration={musicbrainz_metadata.get('duration_ms')}ms, "
-                              f"Album={musicbrainz_metadata.get('album')}, "
-                              f"Score={musicbrainz_metadata.get('score')}")
+                mb_metadata = musicbrainz_client.get_track_metadata(artist_str, title)
+                if mb_metadata:
+                    logger.info(f"[MB] Found metadata: {mb_metadata.get('title')} ({mb_metadata.get('duration_ms')}ms) ISRC: {mb_metadata.get('isrc')}")
                     # Store metadata in item for later use
-                    item['musicbrainz_metadata'] = musicbrainz_metadata
-                else:
-                    logger.warning(f"[MUSICBRAINZ] No metadata found for: {artist_str} - {title}")
-
+                    item['musicbrainz_metadata'] = mb_metadata
+                    # Use official names if available, but keep original for search variants
+                    # artist_str = mb_metadata.get('artist', artist_str)
+                    # title = mb_metadata.get('title', title)
+                    # album = mb_metadata.get('album', album)
             except Exception as e:
-                logger.error(f"[MUSICBRAINZ] Error querying for {artist_str} - {title}: {e}")
+                logger.error(f"[MB] Error querying MusicBrainz: {e}")
                 # Continue without MusicBrainz data
                 pass
         
@@ -943,8 +947,8 @@ def background_search_task(search_items: List[Dict]):
                             continue
 
                     # Get MusicBrainz metadata from item
-                    mb_metadata = item.get('musicbrainz_metadata')
-                    top_results = rank_and_filter_results(all_results, mb_metadata)
+                    musicbrainz_metadata = item.get('musicbrainz_metadata')
+                    top_results = rank_and_filter_results(all_results, musicbrainz_metadata)
                     
                     if top_results:
                         # Store results under the original display name (Artist - Title)
@@ -996,13 +1000,21 @@ def background_search_task(search_items: List[Dict]):
         unique_results.sort(key=lambda x: x['quality_score'], reverse=True)
         unique_results = unique_results[:CONFIG['TOP_RESULTS_COUNT']]
         
+        # Get MusicBrainz metadata from item
+        musicbrainz_metadata = item.get('musicbrainz_metadata')
+
+        # Save results
         if unique_results:
-            # Get MusicBrainz metadata from item
-            mb_metadata = item.get('musicbrainz_metadata')
-
-            # Use the new add_track_results method with MusicBrainz metadata
-            search_manager.add_track_results(main_key, artist, title, album, unique_results, "", mb_metadata)
-
+            logger.info(f"[WORKER] Found {len(unique_results)} unique results for {item_id}")
+            search_manager.add_track_results(
+                main_key, 
+                artist_str, 
+                title, 
+                album, 
+                unique_results, 
+                "", 
+                musicbrainz_metadata=musicbrainz_metadata
+            )
             # Watchlist check
             top_result = unique_results[0]
             if top_result.get('queue_length', 0) > 0:
@@ -1259,10 +1271,16 @@ def get_stats():
 @app.route('/track/<path:track_key>/delete', methods=['POST'])
 def delete_track(track_key: str):
     """Delete a track to allow re-searching"""
-    success = search_manager.delete_track(track_key)
-    if success:
-        return jsonify({'success': True})
-    return jsonify({'error': 'Track not found'}), 404
+    try:
+        success = search_manager.delete_track(track_key)
+        if success:
+            logger.info(f"Deleted track: {track_key}")
+            return jsonify({'success': True, 'message': 'Track deleted successfully'})
+        else:
+            return jsonify({'error': 'Track not found'}), 404
+    except Exception as e:
+        logger.error(f"Error deleting track {track_key}: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/export/csv')
@@ -1328,13 +1346,8 @@ def download_track(track_key: str):
         # Check for ISRC-based duplicates
         musicbrainz_data = track_data.get('musicbrainz')
         isrc = musicbrainz_data.get('isrc') if musicbrainz_data else None
-
+        
         if isrc and isrc_tracker.is_duplicate(isrc):
-            duplicate_info = isrc_tracker.get_duplicate_info(isrc)
-            return jsonify({
-                'error': 'duplicate',
-                'message': f'This track (ISRC: {isrc}) has already been downloaded',
-                'isrc': isrc,
                 'original_download': duplicate_info
             }), 409  # 409 Conflict
 
