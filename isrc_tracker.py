@@ -46,7 +46,7 @@ class ISRCTracker:
         with self.lock:
             return isrc in self.history
 
-    def add_download(self, isrc: Optional[str], artist: str, title: str, filename: str):
+    def record_download(self, isrc: Optional[str], artist: str, title: str, filename: str, **kwargs):
         """Record a successful download."""
         if not isrc:
             logger.warning(f"Download finished without ISRC for {artist} - {title}. Cannot track for duplicates.")
@@ -55,12 +55,16 @@ class ISRCTracker:
         with self.lock:
             if isrc not in self.history:
                 logger.info(f"Recording download history for ISRC: {isrc} ({artist} - {title})")
-                self.history[isrc] = {
+                entry = {
                     'artist': artist,
                     'title': title,
                     'filename': filename,
                     'downloaded_at': time.strftime('%Y-%m-%dT%H:%M:%S')
                 }
+                # Add any extra metadata provided
+                entry.update(kwargs)
+                
+                self.history[isrc] = entry
                 self._save_history()
 
     def get_info_by_isrc(self, isrc: str) -> Optional[Dict]:

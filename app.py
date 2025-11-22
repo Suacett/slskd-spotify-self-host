@@ -1334,48 +1334,28 @@ def export_csv():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/download/<path:filename>', methods=['POST'])
-def download_file(filename):
-    track_key = request.args.get('track_key')
-    if not track_key:
-        return jsonify({'status': 'error', 'message': 'Missing track_key'}), 400
-
-    isrc = search_manager.get_track_isrc(track_key)
-
+@app.route('/download/<path:track_key>', methods=['POST'])
+def download_track(track_key: str):
+    """Download a single track with ISRC-based duplicate prevention"""
     try:
-        # --- ISRC Duplicate Check moved INSIDE the try block ---
-        if isrc_tracker.is_duplicate(isrc):
+        # Get track results
+        track_data = search_manager.get_track_results(track_key)
+        if not track_data or not track_data.get('results'):
+            return jsonify({'error': 'No results found for track'}), 404
+
+        # Check for ISRC-based duplicates
+        musicbrainz_data = track_data.get('musicbrainz')
+        isrc = musicbrainz_data.get('isrc') if musicbrainz_data else None
+        
+        if isrc and isrc_tracker.is_duplicate(isrc):
             duplicate_info = isrc_tracker.get_info_by_isrc(isrc)
-            logger.warning(f"Skipping download for {track_key}. Duplicate ISRC found: {isrc}. (Original: {duplicate_info.get('filename')})")
+            logger.warning(f"Skipping download for {track_key}. Duplicate ISRC found: {isrc}")
             return jsonify({
-                'status': 'error',
-                'message': 'Duplicate found. This song (by ISRC) has already been downloaded.',
+                'error': 'Duplicate detected',
+                'message': 'This track has already been downloaded (ISRC match).',
                 'is_duplicate': True,
                 'original_download': duplicate_info
             }), 409
-        # -------------------------------------------------------
-
-        # Initiate download with Slskd
-        if slskd_client.download(filename):
-            # ... (rest of the success logic) ...
-            return jsonify({'status': 'success', 'message': f'Download initiated for {filename}'})
-        else:
-            # ... (rest of the error logic) ...
-            return jsonify({'status': 'error', 'message': 'Failed to initiate download with Slskd'}), 500
-
-    except Exception as e:
-        logger.error(f"Error during download initiation for {filename}: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-        
-if isrc_tracker.is_duplicate(isrc):
-                duplicate_info = isrc_tracker.get_info_by_isrc(isrc)
-                logger.warning(f"Skipping download for {track_key}. Duplicate ISRC found: {isrc}. (Original: {duplicate_info.get('filename')})")
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Duplicate found. This song (by ISRC) has already been downloaded.',
-                    'is_duplicate': True,
-                    'original_download': duplicate_info
-                }), 409
 
         # Get top result
         top_result = track_data['results'][0]
@@ -1400,9 +1380,9 @@ if isrc_tracker.is_duplicate(isrc):
                 isrc=isrc,
                 artist=track_data.get('artist'),
                 title=track_data.get('title'),
+                filename=filename,
                 album=track_data.get('album'),
                 username=username,
-                filename=filename,
                 size=top_result.get('size'),
                 bitrate=top_result.get('bitrate'),
                 musicbrainz_id=musicbrainz_data.get('musicbrainz_id') if musicbrainz_data else None
@@ -1421,6 +1401,8 @@ if isrc_tracker.is_duplicate(isrc):
     except Exception as e:
         logger.error(f"Download error for {track_key}: {e}")
         return jsonify({'error': str(e)}), 500
+
+
 
 
 @app.route('/bulk_download', methods=['POST'])
@@ -1459,7 +1441,7 @@ def bulk_download():
 
                 if isrc and isrc_tracker.is_duplicate(isrc):
                     duplicates += 1
-                    duplicate_info = isrc_tracker.get_duplicate_info(isrc)
+                    duplicate_info = isrc_tracker.get_info_by_isrc(isrc)
                     duplicate_details.append({
                         'track_key': track_key,
                         'isrc': isrc,
