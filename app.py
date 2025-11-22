@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Spotify to Slskd Search Aggregator
+Spotify to Slskd Search Aggregator with Smart Quality Scoring
 A Flask application that searches Slskd for artists from Spotify playlists
-and provides a browsing interface for the results.
+and provides intelligent filtering to show only the best quality results.
 """
 
 import os
@@ -21,15 +21,53 @@ from werkzeug.utils import secure_filename
 from slskd_api import SlskdClient
 from slskd_api.exceptions import SlskdException
 
-# Configuration
-CONFIG = {
+# Configuration file path
+CONFIG_FILE = Path(os.getenv('DATA_DIR', '/app/data')) / 'config.json'
+
+# Default configuration
+DEFAULT_CONFIG = {
     'SLSKD_URL': os.getenv('SLSKD_URL', 'http://192.168.1.124:5030'),
     'SLSKD_API_KEY': os.getenv('SLSKD_API_KEY', ''),
+    'SLSKD_USERNAME': os.getenv('SLSKD_USERNAME', ''),
+    'SLSKD_PASSWORD': os.getenv('SLSKD_PASSWORD', ''),
     'SLSKD_URL_BASE': os.getenv('SLSKD_URL_BASE', '/'),
     'SEARCH_TIMEOUT': int(os.getenv('SEARCH_TIMEOUT', '15')),
     'SEARCH_DELAY': int(os.getenv('SEARCH_DELAY', '3')),
     'DATA_DIR': os.getenv('DATA_DIR', '/app/data'),
+    # Smart Quality Settings
+    'MIN_BITRATE': 192,
+    'MAX_QUEUE_LENGTH': 50,
+    'MIN_SPEED_KBS': 50,
+    'TOP_RESULTS_COUNT': 5,
 }
+
+# Load configuration from file or environment
+def load_config():
+    """Load configuration from file or use defaults"""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                saved_config = json.load(f)
+                # Merge with defaults
+                config = DEFAULT_CONFIG.copy()
+                config.update(saved_config)
+                return config
+        except Exception as e:
+            logging.error(f"Error loading config: {e}")
+    return DEFAULT_CONFIG.copy()
+
+def save_config(config):
+    """Save configuration to file"""
+    try:
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+        return True
+    except Exception as e:
+        logging.error(f"Error saving config: {e}")
+        return False
+
+CONFIG = load_config()
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -64,6 +102,124 @@ search_state = {
 
 # Results file path
 RESULTS_FILE = Path(CONFIG['DATA_DIR']) / 'search_results.json'
+
+
+def calculate_quality_score(file_info: Dict) -> float:
+    """
+    Calculate quality score for a file based on:
+    - Bitrate/Format (higher is better)
+    - Upload Speed (faster is better)
+    - Queue Length (shorter is better)
+
+    Returns a score where higher is better.
+    """
+    score = 0.0
+
+    # Bitrate scoring (0-100 points)
+    bitrate = file_info.get('bitrate', 0)
+    extension = file_info.get('extension', '').lower()
+
+    if extension in ['flac', 'wav', 'alac', 'ape']:
+        score += 100  # Lossless formats get maximum points
+    elif bitrate >= 320:
+        score += 90
+    elif bitrate >= 256:
+        score += 70
+    elif bitrate >= 192:
+        score += 50
+    else:
+        score += 20
+
+    # Speed scoring (0-50 points)
+    speed_kbs = file_info.get('speed_kbs', 0)
+    if speed_kbs >= 2000:  # 2 MB/s
+        score += 50
+    elif speed_kbs >= 1000:  # 1 MB/s
+        score += 40
+    elif speed_kbs >= 500:
+        score += 30
+    elif speed_kbs >= 100:
+        score += 20
+    elif speed_kbs >= 50:
+        score += 10
+
+    # Queue penalty (subtract up to 100 points)
+    queue_length = file_info.get('queue_length', 0)
+    if queue_length == 0:
+        score += 50  # Bonus for instant availability
+    elif queue_length <= 5:
+        score -= 10
+    elif queue_length <= 10:
+        score -= 30
+    elif queue_length <= 25:
+        score -= 50
+    else:
+        score -= 100  # Heavy penalty for long queues
+
+    # Free slot bonus
+    if file_info.get('has_free_slot', False):
+        score += 25
+
+    return score
+
+
+def passes_quality_filters(file_info: Dict) -> bool:
+    """
+    Apply strict quality filters to determine if a file should be shown.
+
+    Filters:
+    - Bitrate must be >= MIN_BITRATE (unless lossless)
+    - Queue length must be <= MAX_QUEUE_LENGTH
+    - Speed must be >= MIN_SPEED_KBS
+    - File must not be locked
+    """
+    extension = file_info.get('extension', '').lower()
+    bitrate = file_info.get('bitrate', 0)
+    queue_length = file_info.get('queue_length', 0)
+    speed_kbs = file_info.get('speed_kbs', 0)
+    is_locked = file_info.get('is_locked', False)
+
+    # Locked files are always rejected
+    if is_locked:
+        return False
+
+    # Queue too long
+    if queue_length > CONFIG['MAX_QUEUE_LENGTH']:
+        return False
+
+    # Speed too slow
+    if speed_kbs < CONFIG['MIN_SPEED_KBS']:
+        return False
+
+    # Bitrate check (lossless formats bypass this)
+    if extension not in ['flac', 'wav', 'alac', 'ape']:
+        if bitrate < CONFIG['MIN_BITRATE']:
+            return False
+
+    return True
+
+
+def rank_and_filter_results(results: List[Dict]) -> List[Dict]:
+    """
+    Filter results based on quality criteria and return top N ranked results.
+
+    Returns:
+        List of top quality results, ranked by score
+    """
+    # First, filter out low-quality results
+    filtered_results = []
+    for result in results:
+        if passes_quality_filters(result):
+            # Calculate quality score
+            result['quality_score'] = calculate_quality_score(result)
+            filtered_results.append(result)
+
+    # Sort by quality score (descending)
+    filtered_results.sort(key=lambda x: x['quality_score'], reverse=True)
+
+    # Return top N results
+    top_count = CONFIG.get('TOP_RESULTS_COUNT', 5)
+    return filtered_results[:top_count]
 
 
 class SearchManager:
@@ -195,10 +351,10 @@ def parse_spotify_csv(file_path: Path) -> List[str]:
 
 def search_artist_on_slskd(client: SlskdClient, artist_name: str) -> Tuple[List[Dict], str]:
     """
-    Search for an artist on Slskd and return results
+    Search for an artist on Slskd and return results with quality scoring
 
     Returns:
-        Tuple of (results list, search_id)
+        Tuple of (top quality results list, search_id)
     """
     try:
         logger.info(f"Searching for artist: {artist_name}")
@@ -223,7 +379,7 @@ def search_artist_on_slskd(client: SlskdClient, artist_name: str) -> Tuple[List[
             files = []
 
         # Parse and format results
-        formatted_results = []
+        all_results = []
         for file_info in files:
             try:
                 # Extract file information
@@ -231,23 +387,35 @@ def search_artist_on_slskd(client: SlskdClient, artist_name: str) -> Tuple[List[
                 size = file_info.get('size', 0)
                 username = file_info.get('username', 'Unknown')
 
-                # Try to determine quality
+                # Quality metrics
                 extension = Path(filename).suffix.lower().replace('.', '')
                 bitrate = file_info.get('bitRate', 0)
+                queue_length = file_info.get('queueLength', 0)
+                upload_speed = file_info.get('uploadSpeed', 0)  # in bytes/sec
+                speed_kbs = upload_speed / 1024 if upload_speed else 0
+                has_free_slot = file_info.get('hasFreeUploadSlot', False)
+                is_locked = file_info.get('isLocked', False)
 
-                formatted_results.append({
+                all_results.append({
                     'username': username,
                     'filename': filename,
                     'size': size,
                     'bitrate': bitrate,
-                    'extension': extension
+                    'extension': extension,
+                    'queue_length': queue_length,
+                    'speed_kbs': speed_kbs,
+                    'has_free_slot': has_free_slot,
+                    'is_locked': is_locked,
                 })
             except Exception as e:
                 logger.warning(f"Error parsing file info: {e}")
                 continue
 
-        logger.info(f"Found {len(formatted_results)} results for {artist_name}")
-        return formatted_results, search_id
+        # Apply smart quality filtering and ranking
+        top_results = rank_and_filter_results(all_results)
+
+        logger.info(f"Found {len(all_results)} total results, filtered to top {len(top_results)} for {artist_name}")
+        return top_results, search_id
 
     except SlskdException as e:
         logger.error(f"Slskd API error searching for {artist_name}: {e}")
@@ -307,7 +475,7 @@ def background_search_task(artists: List[str]):
                 search_manager.add_artist_results(artist, results, search_id)
 
                 if len(results) == 0:
-                    search_state['errors'].append(f"No results found for: {artist}")
+                    search_state['errors'].append(f"No quality results found for: {artist}")
 
                 break  # Success
             except Exception as e:
@@ -335,6 +503,10 @@ def background_search_task(artists: List[str]):
 @app.route('/')
 def index():
     """Main dashboard page"""
+    # Check if configuration is needed
+    if not CONFIG.get('SLSKD_API_KEY'):
+        return redirect(url_for('settings'))
+
     stats = search_manager.get_stats()
 
     # Get all artists with their info
@@ -353,9 +525,42 @@ def index():
     return render_template('index.html', stats=stats, artists=artists, search_state=search_state)
 
 
+@app.route('/settings', methods=['GET', 'POST'])
+def settings():
+    """Configuration settings page"""
+    if request.method == 'POST':
+        # Update configuration
+        new_config = CONFIG.copy()
+        new_config['SLSKD_URL'] = request.form.get('slskd_url', CONFIG['SLSKD_URL'])
+        new_config['SLSKD_API_KEY'] = request.form.get('slskd_api_key', CONFIG['SLSKD_API_KEY'])
+        new_config['SLSKD_USERNAME'] = request.form.get('slskd_username', '')
+        new_config['SLSKD_PASSWORD'] = request.form.get('slskd_password', '')
+        new_config['SLSKD_URL_BASE'] = request.form.get('slskd_url_base', CONFIG['SLSKD_URL_BASE'])
+
+        # Parse numeric values
+        try:
+            new_config['SEARCH_TIMEOUT'] = int(request.form.get('search_timeout', CONFIG['SEARCH_TIMEOUT']))
+            new_config['SEARCH_DELAY'] = int(request.form.get('search_delay', CONFIG['SEARCH_DELAY']))
+            new_config['MIN_BITRATE'] = int(request.form.get('min_bitrate', CONFIG['MIN_BITRATE']))
+            new_config['MAX_QUEUE_LENGTH'] = int(request.form.get('max_queue_length', CONFIG['MAX_QUEUE_LENGTH']))
+            new_config['MIN_SPEED_KBS'] = int(request.form.get('min_speed_kbs', CONFIG['MIN_SPEED_KBS']))
+            new_config['TOP_RESULTS_COUNT'] = int(request.form.get('top_results_count', CONFIG['TOP_RESULTS_COUNT']))
+        except ValueError:
+            return jsonify({'error': 'Invalid numeric value'}), 400
+
+        # Save configuration
+        if save_config(new_config):
+            CONFIG.update(new_config)
+            return jsonify({'success': True, 'message': 'Configuration saved successfully'})
+        else:
+            return jsonify({'error': 'Failed to save configuration'}), 500
+
+    return render_template('settings.html', config=CONFIG)
+
+
 @app.route('/artist/<artist_name>')
 def artist_detail(artist_name: str):
-    """Artist detail page showing all search results"""
+    """Artist detail page showing top quality search results"""
     artist_data = search_manager.get_artist_results(artist_name)
 
     if not artist_data:
@@ -497,7 +702,8 @@ def export_csv():
         writer = csv.writer(output)
 
         # Write header
-        writer.writerow(['Artist', 'Username', 'Filename', 'Size (MB)', 'Bitrate', 'Extension', 'Reviewed'])
+        writer.writerow(['Artist', 'Username', 'Filename', 'Size (MB)', 'Bitrate', 'Extension',
+                        'Queue', 'Speed (KB/s)', 'Quality Score', 'Reviewed'])
 
         # Write data
         for artist_name, artist_data in search_manager.results['artists'].items():
@@ -510,6 +716,9 @@ def export_csv():
                     round(result['size'] / (1024 * 1024), 2),  # Convert to MB
                     result['bitrate'],
                     result['extension'],
+                    result.get('queue_length', 'N/A'),
+                    round(result.get('speed_kbs', 0), 2),
+                    round(result.get('quality_score', 0), 2),
                     reviewed
                 ])
 
@@ -542,21 +751,29 @@ def download_backup():
 def health_check():
     """Health check endpoint"""
     try:
-        # Test Slskd connection
-        client = SlskdClient(
-            host=CONFIG['SLSKD_URL'],
-            api_key=CONFIG['SLSKD_API_KEY'],
-            url_base=CONFIG['SLSKD_URL_BASE']
-        )
+        # Test Slskd connection if configured
+        if CONFIG.get('SLSKD_API_KEY'):
+            client = SlskdClient(
+                host=CONFIG['SLSKD_URL'],
+                api_key=CONFIG['SLSKD_API_KEY'],
+                url_base=CONFIG['SLSKD_URL_BASE']
+            )
 
-        # Try to get server state
-        state = client.application.state()
+            # Try to get server state
+            state = client.application.state()
 
-        return jsonify({
-            'status': 'healthy',
-            'slskd_connected': True,
-            'slskd_state': state.get('state', 'unknown')
-        })
+            return jsonify({
+                'status': 'healthy',
+                'slskd_connected': True,
+                'slskd_state': state.get('state', 'unknown'),
+                'smart_filtering': True
+            })
+        else:
+            return jsonify({
+                'status': 'healthy',
+                'slskd_connected': False,
+                'configuration_needed': True
+            })
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return jsonify({
@@ -566,41 +783,23 @@ def health_check():
         }), 503
 
 
-@app.route('/test_upload')
-def test_upload():
-    """Simple test page for file upload"""
-    html = '''
-    <!DOCTYPE html>
-    <html>
-    <head><title>Test Upload</title></head>
-    <body>
-        <h1>Test CSV Upload</h1>
-        <form action="/upload" method="post" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".csv">
-            <button type="submit">Upload</button>
-        </form>
-    </body>
-    </html>
-    '''
-    return html
-
-
 if __name__ == '__main__':
-    # Validate configuration
-    if not CONFIG['SLSKD_API_KEY']:
-        logger.error("SLSKD_API_KEY environment variable is required!")
-        logger.error("Please set it in your .env file or docker-compose.yml")
-        logger.error("See .env.example for configuration options")
-
     # Log startup info
     logger.info("=" * 50)
-    logger.info("Spotify to Slskd Search Aggregator")
+    logger.info("Spotify to Slskd Search Aggregator with Smart Quality")
     logger.info("=" * 50)
     logger.info(f"Slskd URL: {CONFIG['SLSKD_URL']}")
     logger.info(f"Data directory: {CONFIG['DATA_DIR']}")
     logger.info(f"Search timeout: {CONFIG['SEARCH_TIMEOUT']}s")
     logger.info(f"Search delay: {CONFIG['SEARCH_DELAY']}s")
+    logger.info(f"Min bitrate: {CONFIG['MIN_BITRATE']} kbps")
+    logger.info(f"Max queue: {CONFIG['MAX_QUEUE_LENGTH']}")
+    logger.info(f"Min speed: {CONFIG['MIN_SPEED_KBS']} KB/s")
+    logger.info(f"Top results: {CONFIG['TOP_RESULTS_COUNT']}")
     logger.info("=" * 50)
+
+    if not CONFIG.get('SLSKD_API_KEY'):
+        logger.warning("SLSKD_API_KEY not configured! Please configure via web interface.")
 
     # Run Flask app
     app.run(host='0.0.0.0', port=5000, debug=False)
