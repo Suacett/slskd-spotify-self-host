@@ -562,6 +562,60 @@ class SearchManager:
 
             self.save_results()
 
+    def get_results_by_artist(self) -> Dict:
+        """
+        Get results grouped by Artist -> Album -> Tracks
+        Returns:
+            {
+                "Artist Name": {
+                    "stats": {"total": 0, "found": 0, "downloaded": 0},
+                    "albums": {
+                        "Album Name": [track_data, ...]
+                    },
+                    "singles": [track_data, ...]
+                }
+            }
+        """
+        grouped = {}
+
+        # Helper to add track to grouped structure
+        def add_track(track):
+            artist = track.get('artist', 'Unknown Artist')
+            album = track.get('album', 'Unknown Album')
+            
+            if artist not in grouped:
+                grouped[artist] = {
+                    'stats': {'total': 0, 'found': 0, 'downloaded': 0},
+                    'albums': {},
+                    'singles': []
+                }
+            
+            # Update stats
+            grouped[artist]['stats']['total'] += 1
+            if track.get('result_count', 0) > 0:
+                grouped[artist]['stats']['found'] += 1
+            
+            # Add to album or singles
+            if album and album != 'Unknown Album':
+                if album not in grouped[artist]['albums']:
+                    grouped[artist]['albums'][album] = []
+                grouped[artist]['albums'][album].append(track)
+            else:
+                grouped[artist]['singles'].append(track)
+
+        # Process Albums
+        albums = self.results.get('albums', {})
+        for album_data in albums.values():
+            for track in album_data.get('tracks', []):
+                add_track(track)
+
+        # Process Legacy Tracks
+        tracks = self.results.get('tracks', {})
+        for track in tracks.values():
+            add_track(track)
+            
+        return grouped
+
     def get_all_tracks_flat(self) -> List[Dict]:
         """Get all tracks as a flat list for display"""
         all_tracks = []
@@ -907,6 +961,105 @@ def parse_spotify_csv(file_path: Path) -> List[Dict]:
         raise
 
 
+def search_artist_batch(client: SlskdClient, artist: str, tracks: List[Dict]) -> Tuple[Dict[str, List[Dict]], List[Dict]]:
+    """
+    Perform a batch search for an artist and match against multiple tracks.
+    
+    Args:
+        client: SlskdClient instance
+        artist: Artist name to search for
+        tracks: List of track dictionaries to find
+        
+    Returns:
+        Tuple of (found_results_by_track_key, failed_tracks)
+    """
+    logger.info(f"[BATCH] Starting batch search for artist: {artist} ({len(tracks)} tracks)")
+    
+    # 1. Search for Artist
+    try:
+        search_response = client.search(artist)
+        search_id = search_response.get('id')
+        
+        if not search_id:
+            logger.error(f"[BATCH] No search ID for artist: {artist}")
+            return {}, tracks
+
+        # Wait for results
+        wait_time = 5
+        logger.info(f"[BATCH] Waiting {wait_time}s for artist results: {artist}")
+        time.sleep(wait_time)
+        
+        # Fetch results
+        results_response = client.get_search_results(search_id)
+        files = results_response.get('files', [])
+        logger.info(f"[BATCH] Retrieved {len(files)} files for artist: {artist}")
+        
+    except Exception as e:
+        logger.error(f"[BATCH] Error searching for artist {artist}: {e}")
+        return {}, tracks
+
+    # 2. Match files to tracks
+    found_results = {}
+    failed_tracks = []
+    
+    # Pre-process files for faster matching (optional optimization)
+    # For now, we iterate.
+    
+    for track in tracks:
+        title = track.get('title', '')
+        track_key = f"{artist} - {title}"
+        
+        if not title:
+            continue
+            
+        # Filter files for this track
+        track_matches = []
+        for file_info in files:
+            filename = file_info.get('filename', '')
+            
+            # Simple fuzzy match: filename must contain title (case-insensitive)
+            # This is a loose check, we rely on calculate_quality_score for strictness later
+            if title.lower() in filename.lower():
+                 try:
+                    # Extract file information (reuse logic from search_single_item)
+                    size = file_info.get('size', 0)
+                    username = file_info.get('username', 'Unknown')
+                    extension = Path(filename).suffix.lower().replace('.', '')
+                    bitrate = file_info.get('bitRate', 0)
+                    queue_length = file_info.get('queueLength', 0)
+                    upload_speed = file_info.get('uploadSpeed', 0)
+                    speed_kbs = upload_speed / 1024 if upload_speed else 0
+                    has_free_slot = file_info.get('hasFreeUploadSlot', False)
+                    is_locked = file_info.get('isLocked', False)
+
+                    result_dict = {
+                        'username': username,
+                        'filename': filename,
+                        'size': size,
+                        'bitrate': bitrate,
+                        'extension': extension,
+                        'queue_length': queue_length,
+                        'speed_kbs': speed_kbs,
+                        'has_free_slot': has_free_slot,
+                        'is_locked': is_locked,
+                        'requested_title': title
+                    }
+                    track_matches.append(result_dict)
+                 except Exception:
+                    continue
+
+        # Apply quality filters
+        top_results = rank_and_filter_results(track_matches)
+        
+        if top_results:
+            found_results[track_key] = top_results
+            logger.info(f"[BATCH] Matched {len(top_results)} results for track: {title}")
+        else:
+            failed_tracks.append(track)
+            logger.info(f"[BATCH] No matches found for track: {title}")
+
+    return found_results, failed_tracks
+
 def search_single_item(client: SlskdClient, search_item: Dict) -> Tuple[List[Dict], str]:
     """
     Search for a single item (artist + title) on Slskd
@@ -996,7 +1149,7 @@ def search_single_item(client: SlskdClient, search_item: Dict) -> Tuple[List[Dic
 
 
 def background_search_task(search_items: List[Dict] = None):
-    """Background task to search for items concurrently"""
+    """Background task to search for items concurrently using Batch Strategy"""
     global search_state
 
     # If items provided, add to queue
@@ -1004,16 +1157,15 @@ def background_search_task(search_items: List[Dict] = None):
         queue_manager.add_items(search_items)
         logger.info(f"Added {len(search_items)} items to queue")
 
-    # If already active, just return (the loop will pick up new items)
+    # If already active, just return
     if search_state['active']:
         return
 
-    logger.info("Starting background search worker")
+    logger.info("Starting background search worker (Batch Mode)")
 
     # Initialize search state
     search_state['active'] = True
     search_state['total'] = queue_manager.get_count() + search_state.get('progress', 0)
-    # Don't reset progress if resuming
     if not search_state.get('progress'):
         search_state['progress'] = 0
     search_state['errors'] = []
@@ -1035,204 +1187,117 @@ def background_search_task(search_items: List[Dict] = None):
         save_application_state(search_state)
         return
 
-    def process_item(item):
+    def process_artist_group(artist: str, tracks: List[Dict]):
+        """Process all tracks for a single artist"""
         if not search_state['active']:
             return
 
-        item_id = f"{item.get('artist', '')} - {item.get('title', '')}"
-        logger.info(f"[WORKER] Processing item: {item_id}")
+        logger.info(f"[WORKER] Processing batch for artist: {artist} ({len(tracks)} tracks)")
+        search_state['current_item'] = f"Batch: {artist}"
+        save_application_state(search_state)
 
-        artist_str = item.get('artist', '')
-        title = item.get('title', '')
-        album = item.get('album', '')
-        search_mode = search_state.get('mode', 'artist_title')
+        # 1. Enrich metadata for all tracks (MusicBrainz)
+        for track in tracks:
+            title = track.get('title', '')
+            if title:
+                try:
+                    mb_metadata = musicbrainz_client.get_track_metadata(artist, title)
+                    if mb_metadata:
+                        track['musicbrainz_metadata'] = mb_metadata
+                except Exception:
+                    pass
 
-        # STEP 1: Query MusicBrainz for canonical metadata
-        mb_metadata = None
-        if title:
-            try:
-                mb_metadata = musicbrainz_client.get_track_metadata(artist_str, title)
-                if mb_metadata:
-                    logger.info(f"[MB] Found metadata: {mb_metadata.get('title')} ({mb_metadata.get('duration_ms')}ms) ISRC: {mb_metadata.get('isrc')}")
-                    item['musicbrainz_metadata'] = mb_metadata
-            except Exception as e:
-                logger.error(f"[MB] Error querying MusicBrainz: {e}")
-                pass
-        
-        # Split artists (handle comma and ampersand)
-        artists = [a.strip() for a in artist_str.replace('&', ',').split(',') if a.strip()]
-        if not artists:
-            artists = [artist_str]
-        
-        # Determine search queries based on mode
-        queries = []
-        
-        for artist in artists:
-            if search_mode == 'album':
-                if album:
-                    queries.append({'query': f"{artist} {album}", 'display': f"{artist} - {album}", 'type': 'album'})
-                    romaji_artist = romanizer.to_romaji(artist)
-                    romaji_album = romanizer.to_romaji(album)
-                    if (romaji_artist and romaji_artist != artist) or (romaji_album and romaji_album != album):
-                        r_artist = romaji_artist if romaji_artist else artist
-                        r_album = romaji_album if romaji_album else album
-                        queries.append({'query': f"{r_artist} {r_album}", 'display': f"{artist} - {album} (Romaji)", 'type': 'romaji'})
-                else:
-                    queries.append({'query': artist, 'display': artist, 'type': 'original'})
-                    
-            elif search_mode == 'artist_only':
-                queries.append({'query': artist, 'display': artist, 'type': 'original'})
-                romaji_artist = romanizer.to_romaji(artist)
-                if romaji_artist and romaji_artist != artist:
-                    queries.append({'query': romaji_artist, 'display': f"{artist} ({romaji_artist})", 'type': 'romaji'})
-                    
-            else: # artist_title
-                if title:
-                    queries.append({'query': f"{artist} {title}", 'display': f"{artist} - {title}", 'type': 'original'})
-                    romaji_artist = romanizer.to_romaji(artist)
-                    romaji_title = romanizer.to_romaji(title)
-                    if (romaji_artist and romaji_artist != artist) or (romaji_title and romaji_title != title):
-                        r_artist = romaji_artist if romaji_artist else artist
-                        r_title = romaji_title if romaji_title else title
-                        queries.append({'query': f"{r_artist} {r_title}", 'display': f"{artist} - {title} (Romaji)", 'type': 'romaji'})
-                else:
-                    queries.append({'query': artist, 'display': artist, 'type': 'original'})
+        # 2. Batch Search
+        found_results, failed_tracks = search_artist_batch(client, artist, tracks)
 
-        for q in queries:
-            if not search_state['active']:
-                return
-
-            display_name = q['display']
-            search_state['current_item'] = display_name
-            
-            # Jitter (reduced for faster searches)
-            time.sleep(random.uniform(0.2, 0.5))
-
-            try:
-                logger.info(f"Searching for: {q['query']}")
-                search_response = client.search(q['query'])
-                search_id = search_response.get('id')
-                
-                if search_id:
-                    time.sleep(CONFIG['SEARCH_DELAY'])
-                    results_response = client.get_search_results(search_id)
-                    files = results_response.get('files', [])
-                    
-                    all_results = []
-                    for file_info in files:
-                        try:
-                            filename = file_info.get('filename', '')
-                            size = file_info.get('size', 0)
-                            username = file_info.get('username', 'Unknown')
-                            extension = Path(filename).suffix.lower().replace('.', '')
-                            bitrate = file_info.get('bitRate', 0)
-                            queue_length = file_info.get('queueLength', 0)
-                            upload_speed = file_info.get('uploadSpeed', 0)
-                            speed_kbs = upload_speed / 1024 if upload_speed else 0
-                            has_free_slot = file_info.get('hasFreeUploadSlot', False)
-                            is_locked = file_info.get('isLocked', False)
-                            duration_seconds = file_info.get('length')
-
-                            result_dict = {
-                                'username': username,
-                                'filename': filename,
-                                'size': size,
-                                'bitrate': bitrate,
-                                'extension': extension,
-                                'queue_length': queue_length,
-                                'speed_kbs': speed_kbs,
-                                'has_free_slot': has_free_slot,
-                                'is_locked': is_locked,
-                                'duration_seconds': duration_seconds,
-                                'requested_title': title if title else artist
-                            }
-                            all_results.append(result_dict)
-                        except:
-                            continue
-
-                    musicbrainz_metadata = item.get('musicbrainz_metadata')
-                    top_results = rank_and_filter_results(all_results, musicbrainz_metadata)
-                    
-                    if top_results:
-                        if 'collected_results' not in item:
-                            item['collected_results'] = []
-                        item['collected_results'].extend(top_results)
-                        
-                else:
-                    logger.error(f"No search ID for {q['query']}")
-                    
-            except Exception as e:
-                logger.error(f"[WORKER] Error searching {q['query']}: {e}")
-
-        # After all queries for this item, save results
-        main_key = f"{artist} - {title}" if title else artist
-        final_results = item.get('collected_results', [])
-        
-        # Deduplicate
-        unique_results = []
-        seen = set()
-        for r in final_results:
-            key = f"{r['username']}_{r['filename']}"
-            if key not in seen:
-                seen.add(key)
-                unique_results.append(r)
-        
-        # Re-rank
-        unique_results.sort(key=lambda x: x['quality_score'], reverse=True)
-        unique_results = unique_results[:CONFIG['TOP_RESULTS_COUNT']]
-        
-        musicbrainz_metadata = item.get('musicbrainz_metadata')
-
-        if unique_results:
-            search_manager.add_track_results(
-                main_key, 
-                artist_str, 
-                title, 
-                album, 
-                unique_results, 
-                "", 
-                musicbrainz_metadata=musicbrainz_metadata
-            )
-            # Watchlist check
-            top_result = unique_results[0]
-            if top_result.get('queue_length', 0) > 0:
-                watchlist_manager.add_to_watchlist({
+        # 3. Save Found Results
+        for track_key, results in found_results.items():
+            # Find original track data to save
+            original_track = next((t for t in tracks if f"{artist} - {t.get('title')}" == track_key), None)
+            if original_track:
+                # Construct result object
+                search_result = {
                     'artist': artist,
-                    'title': title,
-                    'album': album,
-                    'username': top_result['username'],
-                    'filename': top_result['filename'],
-                    'size': top_result['size'],
-                    'bitrate': top_result['bitrate']
-                })
-        else:
-             search_state['errors'].append(f"No results for: {main_key}")
-             search_manager.add_track_results(main_key, artist, title, album, [], "", musicbrainz_metadata)
+                    'title': original_track.get('title'),
+                    'album': original_track.get('album', ''),
+                    'results': results,
+                    'result_count': len(results),
+                    'musicbrainz': original_track.get('musicbrainz_metadata'),
+                    'last_updated': datetime.now().isoformat(),
+                    'reviewed': False,
+                    'key': track_key
+                }
+                search_manager.add_result(search_result)
+                search_state['progress'] += 1
+                save_application_state(search_state)
 
-        search_state['progress'] += 1
+        # 4. Retry Failed Tracks (Fallback to Single Search)
+        for track in failed_tracks:
+            if not search_state['active']: break
+            
+            logger.info(f"[FALLBACK] Batch failed for {track.get('title')}, trying specific search")
+            results, search_id = search_single_item(client, track)
+            
+            # Save result (even if empty, to mark as searched)
+            track_key = f"{artist} - {track.get('title')}"
+            search_result = {
+                'artist': artist,
+                'title': track.get('title'),
+                'album': track.get('album', ''),
+                'results': results,
+                'result_count': len(results),
+                'musicbrainz': track.get('musicbrainz_metadata'),
+                'last_updated': datetime.now().isoformat(),
+                'reviewed': False,
+                'key': track_key
+            }
+            search_manager.add_result(search_result)
+            search_state['progress'] += 1
+            save_application_state(search_state)
+
+    try:
+        # Drain queue and group by artist
+        all_items = []
+        while True:
+            item = queue_manager.get_next()
+            if not item:
+                break
+            all_items.append(item)
+
+        # Group by artist
+        items_by_artist = {}
+        for item in all_items:
+            artist = item.get('artist', 'Unknown')
+            if artist not in items_by_artist:
+                items_by_artist[artist] = []
+            items_by_artist[artist].append(item)
+
+        logger.info(f"Grouped {len(all_items)} tracks into {len(items_by_artist)} artist batches")
+
+        if all_items:
+            # Update total count
+            search_state['total'] = len(all_items) + search_state.get('progress', 0)
+            save_application_state(search_state)
+
+            # Process artists in parallel
+            max_workers = 4 
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
+                for artist, tracks in items_by_artist.items():
+                    if not search_state['active']: break
+                    futures.append(executor.submit(process_artist_group, artist, tracks))
+                
+                # Wait for completion
+                concurrent.futures.wait(futures)
+
+    except Exception as e:
+        logger.error(f"Background search task error: {e}")
+        search_state['errors'].append(str(e))
+    finally:
+        search_state['active'] = False
+        search_state['completed'] = True
         save_application_state(search_state)
-        logger.info(f"[WORKER] Finished item: {item_id}")
-
-    # Drain queue and process
-    items_to_process = []
-    while True:
-        item = queue_manager.get_next()
-        if not item: break
-        items_to_process.append(item)
-    
-    if items_to_process:
-        # Update total count in case it changed
-        search_state['total'] = len(items_to_process) + search_state.get('progress', 0)
-        save_application_state(search_state)
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-            futures = [executor.submit(process_item, item) for item in items_to_process]
-            concurrent.futures.wait(futures)
-
-    search_state['active'] = False
-    search_state['completed'] = True
-    save_application_state(search_state)
-    logger.info("Background search completed")
+        logger.info("Background search task finished")
 
 
 # Flask Routes
@@ -1246,16 +1311,13 @@ def index():
 
     stats = search_manager.get_stats()
 
-    # Get albums for grouped display
-    albums = search_manager.results.get('albums', {})
+    # Get results grouped by artist for the new UI
+    artist_results = search_manager.get_results_by_artist()
     
-    # Also get legacy tracks for backward compatibility or flat view if needed
-    # For now, we'll pass both and let the template decide, or migrate legacy to "Unknown Album"
-    
-    # Sort albums by artist then name
-    sorted_albums = dict(sorted(albums.items(), key=lambda item: (item[1]['artist'], item[1]['name'])))
+    # Sort artists by name
+    sorted_artists = dict(sorted(artist_results.items()))
 
-    return render_template('index.html', stats=stats, albums=sorted_albums, search_state=search_state, slskd_url=CONFIG['SLSKD_URL'])
+    return render_template('index.html', stats=stats, artists=sorted_artists, search_state=search_state, slskd_url=CONFIG['SLSKD_URL'])
 
 
 @app.route('/settings', methods=['GET', 'POST'])
