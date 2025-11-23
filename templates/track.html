@@ -149,7 +149,7 @@
         border-gray-600
         {% endif %}
         {% if is_hidden %}hidden-result {% if loop.index > 10 %}excess-result{% endif %} {% if is_low_quality %}low-quality-result{% endif %}{% endif %}"
-                style="{% if is_hidden %}display: none;{% endif %}">
+                {% if is_hidden %}style="display: none;" {% endif %}>
                 <div class="p-4"> <!-- Reduced padding -->
                     <!-- Header Row -->
                     <div class="flex justify-between items-start mb-2">
@@ -240,7 +240,8 @@
                             Download
                         </button>
 
-                        <a href="{{ slskd_url }}" target="_blank" rel="noopener noreferrer"
+                        <a href="{{ slskd_url }}/#/search/{{ (track_data.artist + ' ' + track_data.title)|urlencode }}"
+                            target="_blank" rel="noopener noreferrer"
                             class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm transition-all">
                             Slskd
                         </a>
@@ -339,55 +340,69 @@
 </div>
 {% endif %}
 
-<!-- Quality Guide -->
-<div class="mt-8 bg-gray-800 dark:bg-gray-800 rounded-lg p-6 shadow-lg">
-    <h3 class="text-lg font-bold text-white mb-4 flex items-center">
-        <svg class="w-5 h-5 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253">
-            </path>
-        </svg>
-        Quality Guide
-    </h3>
+<!-- Quality Guide (Collapsible) -->
+<div class="mt-8 bg-gray-800 dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+    <details class="group">
+        <summary
+            class="p-6 cursor-pointer flex items-center justify-between bg-gray-750 hover:bg-gray-700 transition-colors">
+            <h3 class="text-lg font-bold text-white flex items-center">
+                <svg class="w-5 h-5 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
+                    </path>
+                </svg>
+                Quality Guide & Tips
+            </h3>
+            <svg class="w-6 h-6 text-gray-400 transform group-open:rotate-180 transition-transform" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+            </svg>
+        </summary>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-            <h4 class="font-semibold text-purple-300 mb-2">🎵 Audio Quality</h4>
-            <ul class="space-y-1 text-sm text-gray-300">
-                <li><span class="text-purple-400">●</span> <strong>FLAC/Lossless</strong> - Perfect quality, larger
-                    files</li>
-                <li><span class="text-blue-400">●</span> <strong>320 kbps</strong> - Excellent quality, smaller files
-                </li>
-                <li><span class="text-green-400">●</span> <strong>256 kbps</strong> - Very good quality</li>
-                <li><span class="text-gray-400">●</span> <strong>192 kbps</strong> - Good quality (minimum shown)</li>
-            </ul>
+        <div class="p-6 border-t border-gray-700">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h4 class="font-semibold text-purple-300 mb-2">🎵 Audio Quality</h4>
+                    <ul class="space-y-1 text-sm text-gray-300">
+                        <li><span class="text-purple-400">●</span> <strong>FLAC/Lossless</strong> - Perfect quality,
+                            larger files</li>
+                        <li><span class="text-blue-400">●</span> <strong>320 kbps</strong> - Excellent quality, smaller
+                            files</li>
+                        <li><span class="text-green-400">●</span> <strong>256 kbps</strong> - Very good quality</li>
+                        <li><span class="text-gray-400">●</span> <strong>192 kbps</strong> - Good quality (minimum
+                            shown)</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h4 class="font-semibold text-blue-300 mb-2">⚡ Download Priority</h4>
+                    <ul class="space-y-1 text-sm text-gray-300">
+                        <li><span class="text-green-400">✓</span> <strong>No Queue</strong> - Download immediately</li>
+                        <li><span class="text-yellow-400">✓</span> <strong>Short Queue (1-10)</strong> - Quick wait</li>
+                        <li><span class="text-orange-400">⚠</span> <strong>Medium Queue (11-50)</strong> - Some wait
+                            time</li>
+                        <li><span class="text-red-400">✗</span> <strong>Long Queue (50+)</strong> - Filtered out</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="mt-4 p-3 bg-blue-900 bg-opacity-20 rounded-lg border border-blue-700">
+                <p class="text-sm text-blue-200">
+                    <strong>💡 Tip:</strong> Results are ranked by a smart scoring system that considers format,
+                    bitrate, speed,
+                    and queue length. The best files appear first. Adjust filtering in <a href="/settings"
+                        class="text-blue-400 hover:text-blue-300 underline">Settings</a>.
+                </p>
+            </div>
         </div>
-
-        <div>
-            <h4 class="font-semibold text-blue-300 mb-2">⚡ Download Priority</h4>
-            <ul class="space-y-1 text-sm text-gray-300">
-                <li><span class="text-green-400">✓</span> <strong>No Queue</strong> - Download immediately</li>
-                <li><span class="text-yellow-400">✓</span> <strong>Short Queue (1-10)</strong> - Quick wait</li>
-                <li><span class="text-orange-400">⚠</span> <strong>Medium Queue (11-50)</strong> - Some wait time</li>
-                <li><span class="text-red-400">✗</span> <strong>Long Queue (50+)</strong> - Filtered out</li>
-            </ul>
-        </div>
-    </div>
-
-    <div class="mt-4 p-3 bg-blue-900 bg-opacity-20 rounded-lg border border-blue-700">
-        <p class="text-sm text-blue-200">
-            <strong>💡 Tip:</strong> Results are ranked by a smart scoring system that considers format, bitrate, speed,
-            and queue length.
-            The best files appear first. Adjust filtering in <a href="/settings"
-                class="text-blue-400 hover:text-blue-300 underline">Settings</a>.
-        </p>
-    </div>
+    </details>
 </div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
+    // eslint-disable-next-line
     const trackKey = {{ track_key| tojson }};
 
     async function markReviewed() {

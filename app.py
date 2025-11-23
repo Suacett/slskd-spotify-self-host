@@ -384,6 +384,10 @@ def rank_and_filter_results(results: List[Dict], musicbrainz_metadata: Optional[
     """
     # First, filter out low-quality results
     filtered_results = []
+    rejected_count = 0
+    
+    logger.info(f"[FILTER] Starting filtering for {len(results)} results")
+    
     for result in results:
         if passes_quality_filters(result):
             # Calculate quality score with MusicBrainz data
@@ -393,6 +397,10 @@ def rank_and_filter_results(results: List[Dict], musicbrainz_metadata: Optional[
                 musicbrainz_metadata
             )
             filtered_results.append(result)
+        else:
+            rejected_count += 1
+
+    logger.info(f"[FILTER] Kept {len(filtered_results)} results, rejected {rejected_count}")
 
     # Sort by quality score (descending)
     filtered_results.sort(key=lambda x: x['quality_score'], reverse=True)
@@ -1534,9 +1542,15 @@ def export_csv():
         output.seek(0)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f'slskd_search_results_{timestamp}.csv'
+        
+        # Convert to bytes
+        from io import BytesIO
+        mem = BytesIO()
+        mem.write(output.getvalue().encode('utf-8'))
+        mem.seek(0)
 
         return send_file(
-            StringIO(output.getvalue()),
+            mem,
             mimetype='text/csv',
             as_attachment=True,
             download_name=filename

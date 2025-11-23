@@ -256,7 +256,7 @@
                         <td class="px-6 py-3 text-sm space-x-3">
                             <a href="/track/{{ track.key|urlencode }}"
                                 class="text-blue-400 hover:text-blue-300 font-medium">View</a>
-                            <a href="{{ slskd_url }}/search?q={{ (track.artist + ' ' + track.title)|urlencode }}"
+                            <a href="{{ slskd_url }}/#/search/{{ (track.artist + ' ' + track.title)|urlencode }}"
                                 target="_blank" rel="noopener noreferrer"
                                 class="text-gray-500 hover:text-white transition-colors" title="Manual Search">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -639,6 +639,8 @@
 
     // Auto-refresh stats and table when search is active
     let autoRefreshInterval = null;
+    // eslint-disable-next-line
+    let initialTracksWithResults = {{ stats.tracks_with_results }};
 
     function startAutoRefresh() {
         if (autoRefreshInterval) return; // Already running
@@ -659,11 +661,19 @@
                     document.querySelector('.grid .bg-gray-800:nth-child(2) .text-3xl').textContent = stats.tracks_with_results;
                     document.querySelector('.grid .bg-gray-800:nth-child(3) .text-3xl').textContent = stats.reviewed_tracks;
                     document.querySelector('.grid .bg-gray-800:nth-child(4) .text-3xl').textContent = stats.total_files;
+
+                    // Check if we have new results to show
+                    if (stats.tracks_with_results > initialTracksWithResults) {
+                        // Reload page to show new results
+                        console.log('New results found, reloading...');
+                        window.location.reload();
+                    }
                 }
 
                 // If search completed, reload page to show new results
                 if (status.completed && !status.active) {
                     stopAutoRefresh();
+                    window.location.reload();
                 }
             } catch (error) {
                 console.error('Auto-refresh error:', error);
