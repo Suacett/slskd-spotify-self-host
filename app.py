@@ -933,16 +933,21 @@ def search_single_item(client: SlskdClient, search_item: Dict) -> Tuple[List[Dic
             logger.error(f"No search ID returned for {query}")
             return [], ""
 
-        # Wait a bit for results to accumulate
-        # With concurrent searches, we might want to wait slightly longer or rely on the client to handle it?
-        # The user prompt suggested 15s per song was too slow, but that was sequential.
-        # In parallel, we can still wait, but maybe less?
-        # Let's stick to a reasonable wait time.
-        time.sleep(CONFIG['SEARCH_DELAY']) 
+        # Wait for results to accumulate
+        # HARDCODED WAIT: Give Slskd time to find files before querying
+        wait_time = 5  # seconds
+        logger.info(f"[SEARCH_WAIT] Starting {wait_time}s wait for search ID: {search_id}")
+        print(f"DEBUG: About to sleep for {wait_time} seconds for search: {query}")
+        time.sleep(wait_time)
+        print(f"DEBUG: Finished sleeping, now fetching results for search: {query}")
+        logger.info(f"[SEARCH_WAIT] Finished {wait_time}s wait, now fetching results for: {query}") 
 
         # Fetch results
+        logger.info(f"[SEARCH_FETCH] Fetching results for search ID: {search_id}")
         results_response = client.get_search_results(search_id)
         files = results_response.get('files', [])
+        logger.info(f"[SEARCH_FETCH] Retrieved {len(files)} raw files from Slskd for: {query}")
+        print(f"DEBUG: Got {len(files)} files from Slskd for search: {query}")
 
         # Parse and format results
         all_results = []
