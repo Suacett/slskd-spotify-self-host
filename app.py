@@ -985,7 +985,7 @@ def search_artist_batch(client: SlskdClient, artist: str, tracks: List[Dict]) ->
             return {}, tracks
 
         # Wait for results
-        wait_time = 5
+        wait_time = 8
         logger.info(f"[BATCH] Waiting {wait_time}s for artist results: {artist}")
         time.sleep(wait_time)
         
@@ -1526,6 +1526,29 @@ def start_search():
 
         if not artists:
             return jsonify({'message': 'All items already searched', 'count': 0}), 200
+
+        # IMMEDIATE UI POPULATION: Add "Pending" results for all items
+        logger.info(f"Pre-populating {len(artists)} pending items")
+        for item in artists:
+            artist = item.get('artist', '')
+            title = item.get('title', '')
+            album = item.get('album', '')
+            key = f"{artist} - {title}" if title else artist
+            
+            # Create a placeholder result
+            pending_result = {
+                'artist': artist,
+                'title': title,
+                'album': album,
+                'results': [],
+                'result_count': 0,
+                'musicbrainz': None,
+                'last_updated': datetime.now().isoformat(),
+                'reviewed': False,
+                'key': key,
+                'status': 'pending'
+            }
+            search_manager.add_result(pending_result)
 
         # Start background thread
         thread = threading.Thread(target=background_search_task, args=(artists,))
