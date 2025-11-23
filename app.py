@@ -513,7 +513,7 @@ class SearchManager:
         }
 
     def add_track_results(self, track_key: str, artist: str, title: str, album: str, results: List[Dict],
-                         search_id: str = "", musicbrainz_metadata: Optional[Dict] = None):
+                         search_id: str = "", musicbrainz_metadata: Optional[Dict] = None, status: str = None):
         """Add or update results for a track, organized by Album"""
         with self.lock:
             # Normalize album name
@@ -547,7 +547,8 @@ class SearchManager:
                 'reviewed': False,
                 'search_id': search_id,
                 'results': results,
-                'key': track_key # Store key for easy lookup
+                'key': track_key, # Store key for easy lookup
+                'status': status
             }
 
             if musicbrainz_metadata:
@@ -561,6 +562,19 @@ class SearchManager:
                 album_data['tracks'].append(track_data)
 
             self.save_results()
+
+    def add_result(self, result: Dict):
+        """Add a result object (wrapper for add_track_results)"""
+        self.add_track_results(
+            track_key=result.get('key'),
+            artist=result.get('artist'),
+            title=result.get('title'),
+            album=result.get('album'),
+            results=result.get('results', []),
+            search_id=result.get('search_id', ""),
+            musicbrainz_metadata=result.get('musicbrainz'),
+            status=result.get('status')
+        )
 
     def get_results_by_artist(self) -> Dict:
         """
